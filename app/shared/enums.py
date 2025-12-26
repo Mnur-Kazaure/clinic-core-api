@@ -1,7 +1,5 @@
 # app/shared/enums.py
 
-# app/shared/enums.py
-
 from enum import Enum
 import enum
 

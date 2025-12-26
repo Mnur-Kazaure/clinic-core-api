@@ -1,3 +1,4 @@
+# app/api/v1/pharmacy.py
 from fastapi import APIRouter, Depends, status
 from uuid import UUID
 

@@ -1,3 +1,4 @@
+# app/models/visit_status_history.py
 import uuid
 from datetime import datetime
 from sqlalchemy import Enum, ForeignKey, DateTime

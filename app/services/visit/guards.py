@@ -56,6 +56,9 @@ ROLE_TRANSITION_MATRIX = {
 
 
 def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
+        # 🔒 SYSTEM bypass — internal automation only
+    if user.role == UserRole.SYSTEM:
+        return
     # 1️⃣ No edits after completion
     if visit.status == VisitStatus.COMPLETED:
         raise PermissionError("Visit already completed")

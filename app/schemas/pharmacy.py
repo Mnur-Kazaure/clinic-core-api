@@ -1,3 +1,4 @@
+# app/schemas/pharmacy.py
 from pydantic import BaseModel, UUID4
 
 
