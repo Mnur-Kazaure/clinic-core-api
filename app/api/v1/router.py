@@ -10,8 +10,7 @@ api_router.include_router(visit.router, tags=["visits"])
 # api_router.include_router(consultation.router, tags=["consultations"])
 api_router.include_router(lab.router, tags=["lab"])
 api_router.include_router(pharmacy.router, tags=["pharmacy"])
-
-
+api_router.include_router(auth.router, tags=["auth"])
 
 
 

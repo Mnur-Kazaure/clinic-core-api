@@ -1,3 +1,4 @@
+# app/core/auth.py
 from fastapi import Depends
 from app.core.config import settings
 

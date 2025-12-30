@@ -1,10 +1,10 @@
-# app/core/database.py
 from typing import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.orm import sessionmaker, Session
 
-from app.core.config import settings  # 🔒 single source of truth
+from app.core.config import settings
+from app.models.base import Base  # ✅ single Base
 
 # -------------------------------------------------------------------
 # SQLAlchemy Engine
@@ -29,12 +29,6 @@ SessionLocal = sessionmaker(
 )
 
 # -------------------------------------------------------------------
-# Declarative Base
-# -------------------------------------------------------------------
-
-Base = declarative_base()
-
-# -------------------------------------------------------------------
 # Dependency Helper
 # -------------------------------------------------------------------
 
@@ -48,33 +42,24 @@ def get_db() -> Generator[Session, None, None]:
 
 
 
+
+
 # # app/core/database.py
-# import os
 # from typing import Generator
 
 # from sqlalchemy import create_engine
 # from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
-# # -------------------------------------------------------------------
-# # Database URL (single source of truth)
-# # -------------------------------------------------------------------
-
-# DATABASE_URL = os.getenv(
-#     "DATABASE_URL",
-#     "sqlite:///./app.db",  # dev-safe fallback
-# )
+# from app.core.config import settings  # 🔒 single source of truth
 
 # # -------------------------------------------------------------------
 # # SQLAlchemy Engine
 # # -------------------------------------------------------------------
 
 # engine = create_engine(
-#     DATABASE_URL,
+#     settings.DATABASE_URL,
 #     future=True,
 #     echo=False,
-#     connect_args={"check_same_thread": False}
-#     if DATABASE_URL.startswith("sqlite")
-#     else {},
 # )
 
 # # -------------------------------------------------------------------
@@ -96,13 +81,10 @@ def get_db() -> Generator[Session, None, None]:
 # Base = declarative_base()
 
 # # -------------------------------------------------------------------
-# # Dependency Helper (optional but useful)
+# # Dependency Helper
 # # -------------------------------------------------------------------
 
 # def get_db() -> Generator[Session, None, None]:
-#     """
-#     Provides a SQLAlchemy DB session per request.
-#     """
 #     db = SessionLocal()
 #     try:
 #         yield db

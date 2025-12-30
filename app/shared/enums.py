@@ -23,6 +23,7 @@ class UserRole(str, Enum):
     ADMIN = "ADMIN"
      # 🔒 Non-human actor
     SYSTEM = "SYSTEM"
+    CLINIC_ADMIN = "CLINIC_ADMIN"
 
 
 class Gender(str, enum.Enum):

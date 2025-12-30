@@ -1,7 +1,8 @@
 # app/core/rbac.py
 from fastapi import Depends, HTTPException, status
 from app.shared.enums import UserRole
-from app.core.auth import get_current_user
+# app/core/dependencies.py
+from app.core.dependencies import get_current_user
 
 
 

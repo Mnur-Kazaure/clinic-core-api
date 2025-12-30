@@ -14,7 +14,7 @@ from app.schemas.visit import (
 )
 from app.services.visit.service import VisitService
 from app.core.dependencies import get_db
-from app.core.auth import get_current_user
+from app.core.dependencies import get_current_user
 from app.shared.enums import VisitStatus
 
 from app.models.visit import Visit
