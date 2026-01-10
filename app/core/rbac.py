@@ -1,8 +1,7 @@
 # app/core/rbac.py
 from fastapi import Depends, HTTPException, status
 from app.shared.enums import UserRole
-# app/core/dependencies.py
-from app.core.dependencies import get_current_user
+from app.core.auth import get_current_user
 
 
 
@@ -35,5 +34,16 @@ def require_reception(user=Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Reception access required",
+        )
+    return user
+
+
+
+# Doctor role required
+def require_doctor(user=Depends(get_current_user)):
+    if user.role != UserRole.DOCTOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Doctor access required",
         )
     return user

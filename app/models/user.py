@@ -1,4 +1,3 @@
-# models/user.py
 # app/models/user.py
 
 import uuid

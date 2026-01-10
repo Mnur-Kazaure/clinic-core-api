@@ -1,5 +1,4 @@
 # app/schemas/lab.py
-# app/schemas/lab.py
 
 from pydantic import BaseModel
 from uuid import UUID

@@ -1,39 +1,46 @@
-# app/services/lab_service.py
+# # app/services/lab_service.py
+from datetime import datetime
+from uuid import UUID
+from fastapi import HTTPException, status
+
 from app.models.lab_request import LabRequest
 from app.models.lab_result import LabResult
-from datetime import datetime
-import uuid
+from app.schemas.lab import LabResultCreate
+from app.shared.enums import LabRequestStatus
 
-from datetime import datetime
-from app.shared.enums import VisitStatus
-from app.services.visit.service import VisitService
-
-from app.core.system_actor import SystemUser
 
 class LabService:
     def __init__(self, db):
         self.db = db
-        self.visit_service = VisitService(db)
 
-
-
-    def record_result(self, visit, payload):
+    # ───────────────────────────────────────
+    # RECORD LAB RESULT
+    # ───────────────────────────────────────
+    def record_result(self, lab_request_id: UUID, payload: LabResultCreate) -> LabResult:
         lab_request = (
             self.db.query(LabRequest)
-            .filter(LabRequest.visit_id == visit.id)
+            .filter(LabRequest.id == lab_request_id)
             .first()
         )
 
         if not lab_request:
-            raise ValueError("No lab request found for visit")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lab request not found",
+            )
+
+        if lab_request.status == LabRequestStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot record result for completed lab request",
+            )
 
         result = LabResult(
-            id=uuid.uuid4(),
             lab_request_id=lab_request.id,
+            technician_id=payload.technician_id,
             result_value=payload.result_value,
             result_unit=payload.result_unit,
             reference_range=payload.reference_range,
-            technician_id=payload.technician_id,
             created_at=datetime.utcnow(),
         )
 
@@ -42,22 +49,42 @@ class LabService:
         self.db.refresh(result)
 
         return result
-    
 
+    # ───────────────────────────────────────
+    # COMPLETE LAB REQUEST (AUTHORITATIVE)
+    # ───────────────────────────────────────
+    def complete_lab_request(self, lab_request_id: UUID) -> LabRequest:
+        """
+        Explicit lab completion.
 
+        - Idempotent
+        - No Visit mutation
+        - No Consultation mutation
+        - Signals readiness only
+        """
 
+        lab_request = (
+            self.db.query(LabRequest)
+            .filter(LabRequest.id == lab_request_id)
+            .first()
+        )
 
-    def complete_lab(self, lab_request):
-        # Mark lab as completed
+        if not lab_request:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lab request not found",
+            )
+
+        if lab_request.status == LabRequestStatus.COMPLETED:
+            return lab_request  # ✅ Idempotent
+
+        lab_request.status = LabRequestStatus.COMPLETED
         lab_request.completed_at = datetime.utcnow()
-        lab_request.status = "COMPLETED"
 
         self.db.add(lab_request)
         self.db.commit()
+        self.db.refresh(lab_request)
 
-        # 🔒 Auto-advance visit (single source of truth)
-        self.visit_service.transition_visit(
-            visit_id=lab_request.visit_id,
-            to_status=VisitStatus.LAB_COMPLETED,
-            user=SystemUser,
-        )
+        return lab_request
+
+

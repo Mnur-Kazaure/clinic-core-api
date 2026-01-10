@@ -2,14 +2,14 @@
 from fastapi import APIRouter, Depends, status
 from uuid import UUID
 
-from app.core.pharmacy_guards import require_pharmacy_access
+from app.core.guards.pharmacy_guards import require_pharmacy_access
 from app.services.pharmacy_service import PharmacyService
 from app.schemas.pharmacy import DispenseCreate, DispenseResponse
 from app.core.dependencies import get_db
 
 router = APIRouter(prefix="/pharmacy", tags=["Pharmacy"])
 
-
+# api/pharmacy/visits/{visit_id}/dispense (This endpoint triger auto-complation)
 @router.post(
     "/{visit_id}/dispense",
     response_model=DispenseResponse,

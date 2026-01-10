@@ -18,11 +18,12 @@ class VisitResponse(BaseModel):
     status: VisitStatus
     assigned_doctor_id: Optional[UUID]
 
+
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ---------------------------

@@ -1,8 +1,5 @@
 # app/core/auth.py
-from fastapi import Depends
-from app.core.config import settings
+from app.core.auth.dependencies import get_current_user
 
-if settings.AUTH_MODE == "dev":
-    from app.core.auth_dev import get_current_user
-else:
-    from app.core.auth_jwt import get_current_user  # future
+__all__ = ["get_current_user"]
+# This file serves as a central point to import authentication-related dependencies.

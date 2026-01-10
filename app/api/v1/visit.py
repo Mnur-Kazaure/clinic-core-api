@@ -14,15 +14,14 @@ from app.schemas.visit import (
 )
 from app.services.visit.service import VisitService
 from app.core.dependencies import get_db
-from app.core.dependencies import get_current_user
+from app.core.auth import get_current_user
 from app.shared.enums import VisitStatus
 
 from app.models.visit import Visit
 from app.schemas.visit import AllowedTransitionsResponse
 from app.schemas.visit import VisitTimelineResponse
 
-# app/api/v1/visit.py
-# router = APIRouter(prefix="/api/visits", tags=["Visits"])
+
 router = APIRouter(prefix="/visits", tags=["Visits"])
 
 
@@ -35,23 +34,52 @@ import uuid
 
 
 @router.post(
-    "",
+    "/start",
     response_model=VisitCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_visit(
+def start_visit(
     payload: VisitCreateRequest,
     db=Depends(get_db),
     current_user=Depends(require_reception),
 ):
+    """
+    START VISIT — This endpoint represents the moment clinical care begins.
+
+    Semantics:
+    - Initiated ONLY by Reception
+    - Creates a Visit
+    - Assigns doctor
+    - Sets started_at (legal timestamp)
+    - Patient enters clinical workflow
+    """
+
+    # 🔒 Prevent multiple active visits for same patient
+    existing = (
+        db.query(Visit)
+        .filter(
+            Visit.patient_id == payload.patient_id,
+            Visit.clinic_id == current_user.clinic_id,
+            Visit.status.notin_(
+                [VisitStatus.COMPLETED, VisitStatus.CANCELLED]
+            ),
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active visit already exists for this patient",
+        )
+
     visit = Visit(
         id=uuid.uuid4(),
         clinic_id=current_user.clinic_id,
         patient_id=payload.patient_id,
         assigned_doctor_id=payload.assigned_doctor_id,
         status=VisitStatus.REGISTERED,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        started_at=datetime.utcnow(),  # 🔒 Legal start of care
     )
 
     db.add(visit)
@@ -61,10 +89,7 @@ def create_visit(
     return visit
 
 
-
-
 # Transition a visit to a new status
-# Idempotent endpoint to prevent duplicate transitions
 @router.post(
     "/{visit_id}/transition",
     response_model=VisitResponse,
@@ -91,14 +116,20 @@ def transition_visit(
             user=current_user,
         )
 
-        # 🔒 Clinic boundary (future multi-tenancy safe)
+        # 🔒 Clinic boundary
         if visit.clinic_id != current_user.clinic_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cross-clinic access denied",
             )
 
-        # ✅ Persist idempotency result (CRITICAL)
+        # ✅ JSON-safe serialization (FIX)
+        response_payload = VisitResponse.model_validate(
+            visit,
+            from_attributes=True,
+        ).model_dump(mode="json")
+
+        # ✅ Persist idempotency atomically
         db.add(
             IdempotencyKey(
                 id=uuid.uuid4(),
@@ -106,68 +137,30 @@ def transition_visit(
                 user_id=current_user.id,
                 endpoint="VISIT_TRANSITION",
                 request_hash=hash_request(payload.dict()),
-                response_body=VisitResponse.model_validate(visit).dict(),
+                response_body=response_payload,
             )
         )
         db.commit()
 
-        return visit
+        # ✅ ALWAYS return serialized payload
+        return response_payload
 
     except PermissionError as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(e),
         )
 
     except ValueError as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
 
-# Idempotent endpoint to prevent duplicate transitions
-# def transition_visit(
-#     visit_id: UUID,
-#     payload: VisitTransitionRequest,
-#     dep=Depends(idempotent("VISIT_TRANSITION")),
-#     current_user=Depends(require_visit_access),
-# ):
-#     record, key, db = dep
-
-#     if record:
-#         return record.response_body
 
 
-#     service = VisitService(db)
-
-#     try:
-#         visit = service.transition_visit(
-#             visit_id=visit_id,
-#             to_status=payload.to_status,
-#             user=current_user,
-#         )
-
-#         # 🔒 Clinic boundary (future multi-tenancy safe)
-#         if visit.clinic_id != current_user.clinic_id:
-#             raise HTTPException(
-#                 status_code=status.HTTP_403_FORBIDDEN,
-#                 detail="Cross-clinic access denied",
-#             )
-
-#         return visit
-
-#     except PermissionError as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail=str(e),
-#         )
-
-#     except ValueError as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail=str(e),
-#         )
-    
 
 # Get allowed transitions for a visit
 @router.get(

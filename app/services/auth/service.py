@@ -49,3 +49,55 @@ class AuthService:
             raise
 
         return clinic, admin
+
+    def create_staff_user(self, *, payload, current_user):
+        """
+        Create a staff user within the same clinic.
+        Only Clinic Admin is allowed to perform this action.
+        """
+
+        # 🔒 Only Clinic Admin
+        if current_user.role != UserRole.CLINIC_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only Clinic Admin may create staff",
+            )
+
+        # 🔒 Allowed staff roles only
+        if payload.role not in {
+            UserRole.RECEPTION,
+            UserRole.DOCTOR,
+            UserRole.LAB,
+            UserRole.PHARMACY,
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid staff role",
+            )
+
+        # 🔒 Email uniqueness
+        exists = (
+            self.db.query(User)
+            .filter(User.email == payload.email)
+            .first()
+        )
+        if exists:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User already exists",
+            )
+
+        user = User(
+            clinic_id=current_user.clinic_id,
+            full_name=payload.full_name,
+            email=payload.email,
+            role=payload.role.value,
+            password_hash=hash_password(payload.password),
+            is_active=True,
+        )
+
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+
+        return user

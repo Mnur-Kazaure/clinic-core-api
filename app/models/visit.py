@@ -28,6 +28,7 @@ class Visit(Base):
         nullable=False,
     )
 
+
     assigned_doctor_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"),
         nullable=False,

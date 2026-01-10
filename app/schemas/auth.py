@@ -1,5 +1,6 @@
 # app/schemas/auth.py
 from pydantic import BaseModel, EmailStr, Field
+from app.shared.enums import UserRole
 
 # Current AUth implementationn
 class LoginRequest(BaseModel):
@@ -18,3 +19,11 @@ class ClinicRegistrationRequest(BaseModel):
     clinic_name: str = Field(..., min_length=2)
     admin_email: EmailStr
     admin_password: str = Field(..., min_length=8)
+
+
+
+class StaffCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    role: UserRole

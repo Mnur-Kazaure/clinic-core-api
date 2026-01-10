@@ -6,7 +6,7 @@ from uuid import UUID
 import jwt
 from jwt import PyJWTError
 
-from app.core.auth.settings import auth_settings
+from app.core.config import settings
 from app.shared.enums import UserRole
 
 
@@ -24,14 +24,14 @@ def encode_access_token(
         "clinic_id": str(clinic_id),
         "iat": int(now.timestamp()),
         "exp": int(
-            (now + timedelta(seconds=auth_settings.JWT_ACCESS_TOKEN_TTL_SECONDS)).timestamp()
+            (now + timedelta(seconds=settings.AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS)).timestamp()
         ),
     }
 
     return jwt.encode(
         payload,
-        auth_settings.JWT_SECRET_KEY,
-        algorithm=auth_settings.JWT_ALGORITHM,
+        settings.AUTH_JWT_SECRET_KEY,
+        algorithm=settings.AUTH_JWT_ALGORITHM,
     )
 
 
@@ -39,8 +39,8 @@ def decode_access_token(token: str) -> Dict[str, Any]:
     try:
         payload = jwt.decode(
             token,
-            auth_settings.JWT_SECRET_KEY,
-            algorithms=[auth_settings.JWT_ALGORITHM],
+            settings.AUTH_JWT_SECRET_KEY,
+            algorithms=[settings.AUTH_JWT_ALGORITHM],
         )
         return payload
 
