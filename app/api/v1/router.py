@@ -1,6 +1,6 @@
 # app/api/v1/router.py
 from fastapi import APIRouter
-from . import auth, patient, visit, consultation, lab, pharmacy, lab_request, prescriptions, clinic_registration, clinic_profile, clinic_staff, user, doctor_lab, admissions, beds, wards, priority, identity
+from . import auth, patient, visit, consultation, lab, pharmacy, lab_request, prescriptions, clinic_registration, clinic_profile, clinic_staff, user, doctor_lab, admissions, beds, wards, priority, identity, audit_review
 
 # app/api/v1/router.py
 api_router = APIRouter(prefix="/api/v1")
@@ -25,3 +25,4 @@ api_router.include_router(beds.router, tags=["beds"])
 api_router.include_router(wards.router, tags=["wards"])
 api_router.include_router(priority.router, tags=["priority"])
 api_router.include_router(identity.router, tags=["identity"])
+api_router.include_router(audit_review.router, tags=["audit_review"])

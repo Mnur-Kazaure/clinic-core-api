@@ -14,7 +14,7 @@ from app.schemas.consultation import (
 )
 from app.services.consultation_service import ConsultationService
 from app.services.access_log_service import AccessLogService
-from app.shared.enums import VisitStatus
+from app.shared.enums import VisitStatus, PurposeOfUse
 
 
 from app.core.guards.consultation_guards import (
@@ -74,8 +74,8 @@ def start_consultation(
     response_model=ConsultationResponse,
 )
 def get_consultation_by_visit(
-    purpose_of_use: str = Query(..., min_length=2),
-    reason: str = Query(..., min_length=2),
+    purpose_of_use: PurposeOfUse = Query(...),
+    justification: str = Query(..., min_length=2),
     break_glass: bool = Query(False),
     db=Depends(get_db),
     current_user=Depends(get_current_user),
@@ -87,7 +87,8 @@ def get_consultation_by_visit(
             clinic_id=current_user.clinic_id,
             patient_id=consultation.visit.patient_id,
             purpose_of_use=purpose_of_use,
-            reason=reason,
+            justification=justification,
+            resource="CONSULTATION_DETAIL",
         )
     else:
         AccessLogService(db).log_chart_read(
@@ -95,7 +96,8 @@ def get_consultation_by_visit(
             clinic_id=current_user.clinic_id,
             patient_id=consultation.visit.patient_id,
             purpose_of_use=purpose_of_use,
-            reason=reason,
+            justification=justification,
+            resource="CONSULTATION_DETAIL",
         )
     return consultation
 

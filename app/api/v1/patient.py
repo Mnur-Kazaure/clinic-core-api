@@ -6,6 +6,7 @@ from app.services.patient_service import PatientService
 from app.services.access_log_service import AccessLogService
 from app.core.dependencies import get_db
 from app.core.rbac import require_reception
+from app.shared.enums import PurposeOfUse
 
 router = APIRouter(prefix="/patient", tags=["Patient"])
 
@@ -34,8 +35,8 @@ def search_patients(
     full_name: str | None = None,
     phone_number: str | None = None,
     limit: int = Query(20, ge=1, le=100),
-    purpose_of_use: str = Query(..., min_length=2),
-    reason: str = Query(..., min_length=2),
+    purpose_of_use: PurposeOfUse = Query(...),
+    justification: str = Query(..., min_length=2),
     db=Depends(get_db),
     current_user=Depends(require_reception),
 ):
@@ -45,7 +46,8 @@ def search_patients(
             actor=current_user,
             clinic_id=current_user.clinic_id,
             purpose_of_use=purpose_of_use,
-            reason=reason,
+            justification=justification,
+            resource="PATIENT_SEARCH",
         )
         return service.search_patients(
             clinic_id=current_user.clinic_id,

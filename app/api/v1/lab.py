@@ -16,7 +16,7 @@ from app.models.visit import Visit
 from app.schemas.lab import LabResultCreate, LabResultResponse
 from app.schemas.lab_request import LabRequestResponse
 from app.services.lab_service import LabService
-from app.shared.enums import LabRequestStatus
+from app.shared.enums import LabRequestStatus, PurposeOfUse
 from app.services.access_log_service import AccessLogService
 
 router = APIRouter(prefix="/lab", tags=["Lab"])
@@ -51,8 +51,8 @@ def list_lab_requests(
 )
 def list_lab_results(
     lab_request_id: UUID,
-    purpose_of_use: str = Query(..., min_length=2),
-    reason: str = Query(..., min_length=2),
+    purpose_of_use: PurposeOfUse = Query(...),
+    justification: str = Query(..., min_length=2),
     break_glass: bool = Query(False),
     db=Depends(get_db),
     current_user=Depends(require_lab_user),
@@ -70,7 +70,8 @@ def list_lab_results(
                 clinic_id=current_user.clinic_id,
                 patient_id=visit.patient_id,
                 purpose_of_use=purpose_of_use,
-                reason=reason,
+                justification=justification,
+                resource="LAB_RESULT",
             )
         else:
             AccessLogService(db).log_chart_read(
@@ -78,7 +79,8 @@ def list_lab_results(
                 clinic_id=current_user.clinic_id,
                 patient_id=visit.patient_id,
                 purpose_of_use=purpose_of_use,
-                reason=reason,
+                justification=justification,
+                resource="LAB_RESULT",
             )
     return (
         db.query(LabResult)

@@ -56,17 +56,9 @@ class BedService:
             raise HTTPException(status_code=409, detail="Bed not available")
 
         if break_glass:
-            if not purpose_of_use or not break_glass_reason:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Break-glass requires purpose_of_use and reason",
-                )
-            self.access_log_service.log_break_glass(
-                actor=actor,
-                clinic_id=actor.clinic_id,
-                patient_id=admission.patient_id,
-                purpose_of_use=purpose_of_use,
-                reason=break_glass_reason,
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Break-glass not allowed on write operations",
             )
 
         assignment = BedAssignment(
@@ -153,17 +145,9 @@ class BedService:
             raise HTTPException(status_code=409, detail="Bed not available")
 
         if break_glass:
-            if not purpose_of_use or not break_glass_reason:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Break-glass requires purpose_of_use and reason",
-                )
-            self.access_log_service.log_break_glass(
-                actor=actor,
-                clinic_id=actor.clinic_id,
-                patient_id=admission.patient_id,
-                purpose_of_use=purpose_of_use,
-                reason=break_glass_reason,
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Break-glass not allowed on write operations",
             )
 
         current.released_at = datetime.now(timezone.utc)

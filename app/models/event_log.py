@@ -1,6 +1,6 @@
 # app/models/event_log.py
 import uuid
-from sqlalchemy import String, Text, ForeignKey
+from sqlalchemy import String, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
@@ -24,3 +24,7 @@ class EventLog(Base):
         nullable=True,
     )
     payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("id", "clinic_id", name="uq_event_log_id_clinic"),
+    )

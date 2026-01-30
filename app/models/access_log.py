@@ -1,8 +1,9 @@
 # app/models/access_log.py
 import uuid
-from sqlalchemy import String, Text, ForeignKey, Boolean
+from sqlalchemy import String, Text, ForeignKey, Boolean, Enum, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
+from app.shared.enums import PurposeOfUse
 
 
 class AccessLog(Base):
@@ -23,8 +24,12 @@ class AccessLog(Base):
         nullable=True,
     )
     action: Mapped[str] = mapped_column(String(50), nullable=False)
-    purpose_of_use: Mapped[str] = mapped_column(String(100), nullable=False)
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    purpose_of_use: Mapped[PurposeOfUse] = mapped_column(
+        Enum(PurposeOfUse, name="purpose_of_use"),
+        nullable=False,
+    )
+    justification: Mapped[str] = mapped_column(Text, nullable=False)
+    resource: Mapped[str] = mapped_column(String(100), nullable=False)
     break_glass: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -32,3 +37,7 @@ class AccessLog(Base):
     )
     session_id: Mapped[str | None] = mapped_column(String(100))
     device_id: Mapped[str | None] = mapped_column(String(100))
+
+    __table_args__ = (
+        UniqueConstraint("id", "clinic_id", name="uq_access_logs_id_clinic"),
+    )

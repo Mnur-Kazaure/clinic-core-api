@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.database import engine
+from app.core.middleware import reject_break_glass_on_write
 from app.models import Base
 
 app = FastAPI(
@@ -19,6 +20,8 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Set-Cookie"],
 )
+
+app.middleware("http")(reject_break_glass_on_write)
 
 @app.on_event("startup")
 def on_startup() -> None:

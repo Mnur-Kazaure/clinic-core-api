@@ -24,3 +24,6 @@ from .identity_evidence import IdentityEvidence
 from .identity_approval import IdentityApproval
 from .patient_identity_map import PatientIdentityMap
 from .identity_map_revocation import IdentityMapRevocation
+from .audit_review_case import AuditReviewCase
+from .audit_review_item import AuditReviewItem
+from .audit_review_case_history import AuditReviewCaseHistory

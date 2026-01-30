@@ -14,6 +14,7 @@ from app.models.visit import Visit
 from app.schemas.lab_request import LabRequestResponse
 from app.schemas.lab import LabResultResponse
 from app.services.access_log_service import AccessLogService
+from app.shared.enums import PurposeOfUse
 
 
 router = APIRouter(prefix="/doctor", tags=["Doctor"])
@@ -26,8 +27,8 @@ router = APIRouter(prefix="/doctor", tags=["Doctor"])
 )
 def list_lab_requests_for_visit(
     visit_id: UUID,
-    purpose_of_use: str = Query(..., min_length=2),
-    reason: str = Query(..., min_length=2),
+    purpose_of_use: PurposeOfUse = Query(...),
+    justification: str = Query(..., min_length=2),
     break_glass: bool = Query(False),
     db=Depends(get_db),
     current_user=Depends(get_current_user),
@@ -39,7 +40,8 @@ def list_lab_requests_for_visit(
             clinic_id=current_user.clinic_id,
             patient_id=visit.patient_id,
             purpose_of_use=purpose_of_use,
-            reason=reason,
+            justification=justification,
+            resource="LAB_REQUESTS",
         )
     else:
         AccessLogService(db).log_chart_read(
@@ -47,7 +49,8 @@ def list_lab_requests_for_visit(
             clinic_id=current_user.clinic_id,
             patient_id=visit.patient_id,
             purpose_of_use=purpose_of_use,
-            reason=reason,
+            justification=justification,
+            resource="LAB_REQUESTS",
         )
     return (
         db.query(LabRequest)
@@ -64,8 +67,8 @@ def list_lab_requests_for_visit(
 )
 def list_lab_results_for_request(
     lab_request_id: UUID,
-    purpose_of_use: str = Query(..., min_length=2),
-    reason: str = Query(..., min_length=2),
+    purpose_of_use: PurposeOfUse = Query(...),
+    justification: str = Query(..., min_length=2),
     break_glass: bool = Query(False),
     db=Depends(get_db),
     current_user=Depends(get_current_user),
@@ -83,7 +86,8 @@ def list_lab_results_for_request(
                 clinic_id=current_user.clinic_id,
                 patient_id=visit.patient_id,
                 purpose_of_use=purpose_of_use,
-                reason=reason,
+                justification=justification,
+                resource="LAB_RESULT",
             )
         else:
             AccessLogService(db).log_chart_read(
@@ -91,7 +95,8 @@ def list_lab_results_for_request(
                 clinic_id=current_user.clinic_id,
                 patient_id=visit.patient_id,
                 purpose_of_use=purpose_of_use,
-                reason=reason,
+                justification=justification,
+                resource="LAB_RESULT",
             )
     return (
         db.query(LabResult)

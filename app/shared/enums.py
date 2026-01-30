@@ -58,6 +58,43 @@ class RecordStatus(str, Enum):
     VOIDED = "VOIDED"
 
 # ------------------------------
+# Access Logs / Audit
+# ------------------------------
+
+class PurposeOfUse(str, Enum):
+    TREATMENT = "TREATMENT"
+    OPERATIONS = "OPERATIONS"
+    EMERGENCY = "EMERGENCY"
+    AUDIT = "AUDIT"
+    BILLING = "BILLING"
+    SECURITY = "SECURITY"
+
+
+class AuditCaseStatus(str, Enum):
+    OPEN = "OPEN"
+    IN_REVIEW = "IN_REVIEW"
+    CLOSED = "CLOSED"
+
+
+class AuditCaseSeverity(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class AuditCaseOutcome(str, Enum):
+    JUSTIFIED = "JUSTIFIED"
+    UNJUSTIFIED = "UNJUSTIFIED"
+    TRAINING_REQUIRED = "TRAINING_REQUIRED"
+    ESCALATED = "ESCALATED"
+
+
+class AuditItemType(str, Enum):
+    ACCESS_LOG = "ACCESS_LOG"
+    EVENT_LOG = "EVENT_LOG"
+
+# ------------------------------
 # Admissions / Beds
 # ------------------------------
 

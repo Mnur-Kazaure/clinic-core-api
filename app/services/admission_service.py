@@ -57,17 +57,9 @@ class AdmissionService:
             )
 
         if break_glass:
-            if not purpose_of_use or not reason:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Break-glass requires purpose_of_use and reason",
-                )
-            self.access_log_service.log_break_glass(
-                actor=actor,
-                clinic_id=actor.clinic_id,
-                patient_id=patient_id,
-                purpose_of_use=purpose_of_use,
-                reason=reason,
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Break-glass not allowed on write operations",
             )
 
         admission = Admission(

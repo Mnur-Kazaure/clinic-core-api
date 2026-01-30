@@ -16,7 +16,7 @@ from app.services.visit.service import VisitService
 from app.services.access_log_service import AccessLogService
 from app.core.dependencies import get_db
 from app.core.auth import get_current_user
-from app.shared.enums import VisitStatus
+from app.shared.enums import VisitStatus, PurposeOfUse
 
 from app.models.visit import Visit
 from app.models.patient import Patient
@@ -281,8 +281,8 @@ def get_recent_visits(
 )
 def get_visit(
     visit_id: UUID,
-    purpose_of_use: str = Query(..., min_length=2),
-    reason: str = Query(..., min_length=2),
+    purpose_of_use: PurposeOfUse = Query(...),
+    justification: str = Query(..., min_length=2),
     break_glass: bool = Query(False),
     db=Depends(get_db),
     current_user=Depends(get_current_user),
@@ -311,7 +311,8 @@ def get_visit(
             clinic_id=current_user.clinic_id,
             patient_id=visit.patient_id,
             purpose_of_use=purpose_of_use,
-            reason=reason,
+            justification=justification,
+            resource="VISIT_DETAIL",
         )
     else:
         AccessLogService(db).log_chart_read(
@@ -319,7 +320,8 @@ def get_visit(
             clinic_id=current_user.clinic_id,
             patient_id=visit.patient_id,
             purpose_of_use=purpose_of_use,
-            reason=reason,
+            justification=justification,
+            resource="VISIT_DETAIL",
         )
     _attach_patient_name(db, visit)
     return visit

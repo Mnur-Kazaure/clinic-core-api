@@ -106,3 +106,36 @@ class EventService:
         self.db.commit()
         self.db.refresh(event)
         return event
+
+    def build_event(
+        self,
+        *,
+        event_type: str,
+        actor_id,
+        actor_role: str,
+        clinic_id,
+        payload: dict,
+        emitter: str,
+        patient_id=None,
+    ) -> EventLog:
+        if event_type not in ALLOWED_EVENT_TYPES:
+            raise ValueError(f"Event type not allowed: {event_type}")
+
+        if emitter not in EMITTER_EVENT_MAP:
+            raise ValueError(f"Emitter not recognized: {emitter}")
+
+        if event_type not in EMITTER_EVENT_MAP[emitter]:
+            raise ValueError(
+                f"Emitter {emitter} not permitted to emit {event_type}"
+            )
+
+        event = EventLog(
+            event_type=event_type,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            clinic_id=clinic_id,
+            patient_id=patient_id,
+            payload=json.dumps(payload),
+        )
+        self.db.add(event)
+        return event

@@ -1,6 +1,7 @@
 import uuid
 from datetime import date
 import pytest
+from fastapi import HTTPException
 
 from app.models.access_log import AccessLog
 from app.models.event_log import EventLog
@@ -8,7 +9,7 @@ from app.models.patient import Patient
 from app.models.visit import Visit
 from app.services.access_log_service import AccessLogService
 from app.models.event_log import EventLog
-from app.shared.enums import VisitStatus, Gender
+from app.shared.enums import VisitStatus, Gender, PurposeOfUse
 
 
 def _seed_patient_visit(db, clinic_id, doctor_id):
@@ -45,16 +46,18 @@ def test_access_logged_search_and_chart_read(db, doctor, clinic_id):
     service.log_search(
         actor=doctor,
         clinic_id=clinic_id,
-        purpose_of_use="clinical_care",
-        reason="patient lookup",
+        purpose_of_use=PurposeOfUse.TREATMENT,
+        justification="patient lookup",
+        resource="PATIENT_SEARCH",
     )
 
     service.log_chart_read(
         actor=doctor,
         clinic_id=clinic_id,
         patient_id=patient.id,
-        purpose_of_use="clinical_care",
-        reason="chart review",
+        purpose_of_use=PurposeOfUse.TREATMENT,
+        justification="chart review",
+        resource="VISIT_DETAIL",
     )
 
     access_logs = db.query(AccessLog).all()
@@ -70,13 +73,14 @@ def test_access_logged_search_and_chart_read(db, doctor, clinic_id):
 def test_break_glass_requires_reason(db, doctor, clinic_id):
     service = AccessLogService(db)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(HTTPException):
         service.log_break_glass(
             actor=doctor,
             clinic_id=clinic_id,
             patient_id=uuid.uuid4(),
-            purpose_of_use="clinical_care",
-            reason="",
+            purpose_of_use=PurposeOfUse.EMERGENCY,
+            justification="",
+            resource="VISIT_DETAIL",
         )
 
 
@@ -88,8 +92,9 @@ def test_break_glass_emits_event(db, doctor, clinic_id):
         actor=doctor,
         clinic_id=clinic_id,
         patient_id=patient.id,
-        purpose_of_use="clinical_care",
-        reason="emergency override",
+        purpose_of_use=PurposeOfUse.EMERGENCY,
+        justification="emergency override",
+        resource="VISIT_DETAIL",
     )
 
     event_logs = db.query(EventLog).filter(EventLog.event_type == "BREAK_GLASS_USED").all()

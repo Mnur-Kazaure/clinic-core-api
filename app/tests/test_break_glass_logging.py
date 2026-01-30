@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime
 
@@ -5,21 +6,21 @@ from app.models.access_log import AccessLog
 from app.models.event_log import EventLog
 from app.models.user import User
 from app.models.patient import Patient
-from app.shared.enums import AdmissionType, Gender, UserRole
-from app.services.admission_service import AdmissionService
+from app.shared.enums import Gender, UserRole, PurposeOfUse
+from app.services.access_log_service import AccessLogService
 
 
 def test_break_glass_dual_logging(db, clinic_id):
-    admin = User(
+    doctor = User(
         id=uuid.uuid4(),
         clinic_id=clinic_id,
-        email=f"admin.{uuid.uuid4()}@example.com",
+        email=f"doctor.{uuid.uuid4()}@example.com",
         password_hash="test",
-        full_name="Admin",
-        role=UserRole.ADMIN,
+        full_name="Doctor",
+        role=UserRole.DOCTOR,
         is_active=True,
     )
-    db.add(admin)
+    db.add(doctor)
     db.commit()
 
     patient = Patient(
@@ -35,20 +36,21 @@ def test_break_glass_dual_logging(db, clinic_id):
     db.add(patient)
     db.commit()
 
-    service = AdmissionService(db)
-    service.create_admission(
+    service = AccessLogService(db)
+    service.log_break_glass(
+        actor=doctor,
+        clinic_id=clinic_id,
         patient_id=patient.id,
-        admission_type=AdmissionType.EMERGENCY,
-        actor=admin,
-        break_glass=True,
-        purpose_of_use="EMERGENCY_CARE",
-        reason="Unresponsive patient",
+        purpose_of_use=PurposeOfUse.EMERGENCY,
+        justification="Unresponsive patient",
+        resource="PATIENT_CHART",
     )
 
     access_log = db.query(AccessLog).filter(AccessLog.action == "BREAK_GLASS").first()
     assert access_log is not None
     assert access_log.break_glass is True
 
-    event_types = {e.event_type for e in db.query(EventLog).all()}
-    assert "BREAK_GLASS_USED" in event_types
-    assert "ACCESS_LOGGED" in event_types
+    event = db.query(EventLog).filter(EventLog.event_type == "BREAK_GLASS_USED").first()
+    assert event is not None
+    payload = json.loads(event.payload)
+    assert payload["access_log_id"] == str(access_log.id)
