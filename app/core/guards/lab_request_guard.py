@@ -35,7 +35,10 @@ def require_lab_request_permission(
     if visit.clinic_id != user.clinic_id:
         raise HTTPException(status_code=403, detail="Cross-clinic access denied")
 
-    if visit.status != VisitStatus.IN_CONSULTATION:
+    if visit.status not in {
+        VisitStatus.IN_CONSULTATION,
+        VisitStatus.LAB_REQUESTED,
+    }:
         raise HTTPException(
             status_code=409,
             detail=f"Cannot order lab when visit is {visit.status}",

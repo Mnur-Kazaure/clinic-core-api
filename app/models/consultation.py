@@ -2,10 +2,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, DateTime, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, DateTime, Text, UniqueConstraint, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.shared.enums import RecordStatus
 
 
 class Consultation(Base):
@@ -25,6 +26,11 @@ class Consultation(Base):
         nullable=False,
     )
 
+    clinic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("clinics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
     doctor_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"),
         nullable=False,
@@ -36,6 +42,22 @@ class Consultation(Base):
     )
 
     completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    record_status: Mapped[RecordStatus] = mapped_column(
+        Enum(RecordStatus, name="record_status"),
+        nullable=False,
+        default=RecordStatus.DRAFT,
+    )
+
+    void_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    signed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
@@ -58,6 +80,11 @@ class Consultation(Base):
     )
 
     notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    doctor_full_name: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )

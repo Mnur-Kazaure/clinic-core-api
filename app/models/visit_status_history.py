@@ -1,6 +1,6 @@
 # app/models/visit_status_history.py
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Enum, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,6 @@ class VisitStatusHistory(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )

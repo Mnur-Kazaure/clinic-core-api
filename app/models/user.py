@@ -1,7 +1,7 @@
 # app/models/user.py
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
@@ -39,6 +39,26 @@ class User(Base):
         nullable=True,
     )
 
+    specialty: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    department: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    room_label: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    availability_status: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
     role: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
@@ -53,5 +73,5 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
     )

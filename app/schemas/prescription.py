@@ -1,5 +1,5 @@
 # app/schemas/prescription.py
-from pydantic import BaseModel, UUID4, Field
+from pydantic import BaseModel, UUID4, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -35,7 +35,7 @@ class PrescriptionDispenseRequest(BaseModel):
 # -----------------------------
 
 class PrescriptionCancelRequest(BaseModel):
-    reason: Optional[str] = None  # intentionally not persisted (Phase 11)
+    reason: str = Field(..., min_length=3)
 
 
 # -----------------------------
@@ -62,5 +62,4 @@ class PrescriptionResponse(BaseModel):
     dispensed_at: Optional[datetime]
     cancelled_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

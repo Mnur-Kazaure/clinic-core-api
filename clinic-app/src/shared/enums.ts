@@ -1,0 +1,27 @@
+// /projects/clinic-monorepo/clinic-app/src/shared/enums.ts
+export enum UserRole {
+  RECEPTION = 'RECEPTION',
+  DOCTOR = 'DOCTOR',
+  LAB = 'LAB',
+  PHARMACY = 'PHARMACY',
+  ADMIN = 'ADMIN',
+  CLINIC_ADMIN = 'CLINIC_ADMIN',
+  SYSTEM = 'SYSTEM',
+}
+
+export enum VisitStatus {
+  REGISTERED = 'REGISTERED',
+  TRIAGED = 'TRIAGED',
+  IN_CONSULTATION = 'IN_CONSULTATION',
+  LAB_REQUESTED = 'LAB_REQUESTED',
+  LAB_COMPLETED = 'LAB_COMPLETED',
+  PHARMACY_PENDING = 'PHARMACY_PENDING',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum PrescriptionStatus {
+  ISSUED = 'ISSUED',
+  DISPENSED = 'DISPENSED',
+  CANCELLED = 'CANCELLED',
+}

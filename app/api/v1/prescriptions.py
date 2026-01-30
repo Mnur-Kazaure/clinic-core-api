@@ -76,34 +76,6 @@ def get_prescription(
 
 
 # ---------------------------------------------------------
-# 3️⃣ Dispense Prescription (Pharmacy-only)
-# This endpoint is duplicated in app/api/v1/pharmacy.py: api/pharmacy/visits/{visit_id}/dispense (This endpoint triger auto-complation)
-# 
-# ---------------------------------------------------------
-# @router.post(
-#     "/{prescription_id}/dispense",
-#     response_model=PrescriptionResponse,
-# )
-# def dispense_prescription(
-#     prescription=Depends(require_pharmacy_for_dispense),
-#     db=Depends(get_db),
-#     current_user=Depends(get_current_user),
-# ):
-#     """
-#     Fulfillment only.
-#     No clinical mutation.
-#     """
-#     service = PrescriptionService(db)
-
-#     dispensed = service.dispense_prescription(
-#         prescription=prescription,
-#         pharmacist_id=current_user.id,
-#     )
-
-#     return dispensed
-
-
-# ---------------------------------------------------------
 # 4️⃣ Cancel Prescription (Doctor-only)
 # ---------------------------------------------------------
 @router.post(
@@ -111,6 +83,7 @@ def get_prescription(
     response_model=PrescriptionResponse,
 )
 def cancel_prescription(
+    payload: PrescriptionCancelRequest,
     prescription=Depends(require_doctor_for_prescription_cancel),
     db=Depends(get_db),
 ):
@@ -122,6 +95,7 @@ def cancel_prescription(
 
     cancelled = service.cancel_prescription(
         prescription=prescription,
+        reason=payload.reason,
     )
 
     return cancelled

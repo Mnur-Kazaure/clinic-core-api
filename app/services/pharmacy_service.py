@@ -1,12 +1,12 @@
 # app/services/pharmacy_service.py
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from app.models.dispensation import Dispensation
 from app.models.prescription import Prescription
 from app.models.visit import Visit
 from app.services.visit.service import VisitService
-from app.shared.enums import VisitStatus
+from app.shared.enums import PrescriptionStatus, VisitStatus
 from app.core.system_actor import SystemUser
 
 
@@ -24,7 +24,9 @@ class PharmacyService:
         if not prescription:
             raise ValueError("No prescription found for visit")
 
-        # ❌ Safety: prevent double dispense
+        return self.dispense_prescription(prescription, payload)
+
+    def dispense_prescription(self, prescription, payload):
         existing = (
             self.db.query(Dispensation)
             .filter(Dispensation.prescription_id == prescription.id)
@@ -36,17 +38,17 @@ class PharmacyService:
         dispensation = Dispensation(
             id=uuid.uuid4(),
             prescription_id=prescription.id,
+            clinic_id=prescription.clinic_id,
             pharmacist_id=payload.pharmacist_id,
             quantity=payload.quantity,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
 
         self.db.add(dispensation)
         self.db.commit()
         self.db.refresh(dispensation)
 
-        # 🔁 Phase 2.4 — Auto-complete visit if eligible
-        self._try_auto_complete_visit(visit.id)
+        self._try_auto_complete_visit(prescription.visit_id)
 
         return dispensation
 

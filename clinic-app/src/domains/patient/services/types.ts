@@ -1,0 +1,11 @@
+// /projects/clinic-monorepo/clinic-app/src/domains/patient/services/types.ts
+export interface PatientResponse {
+  id: string;
+  clinic_id: string;
+  full_name: string;
+  date_of_birth: string; // "YYYY-MM-DD"
+  gender: 'MALE' | 'FEMALE';
+  phone_number: string;
+  address: string;
+  occupation: string;
+}

@@ -42,6 +42,8 @@ def receptionist(db, clinic_id):
     user = User(
         id=uuid.uuid4(),
         clinic_id=clinic_id,
+        email=f"reception_{clinic_id}@example.test",
+        password_hash="test",
         role=UserRole.RECEPTION,
         is_active=True,
     )
@@ -55,6 +57,8 @@ def doctor(db, clinic_id):
     user = User(
         id=uuid.uuid4(),
         clinic_id=clinic_id,
+        email=f"doctor_{clinic_id}@example.test",
+        password_hash="test",
         role=UserRole.DOCTOR,
         is_active=True,
     )

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     AUTH_JWT_SECRET_KEY: str
     AUTH_JWT_ALGORITHM: str = "HS256"
     AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS: int = 3600
+    AUTH_REFRESH_TOKEN_TTL_DAYS: int = 14
     
     # Remove AuthSettings class entirely
     # Use: settings.AUTH_JWT_SECRET_KEY

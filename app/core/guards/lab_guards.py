@@ -66,6 +66,105 @@ def require_lab_access(
     return visit
 
 
+def _require_lab_request_access_base(
+    lab_request_id: UUID,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+    *,
+    enforce_visit_status: bool,
+) -> LabRequest:
+    if current_user.role != UserRole.LAB:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Lab access required",
+        )
+
+    lab_request = (
+        db.query(LabRequest)
+        .filter(LabRequest.id == lab_request_id)
+        .first()
+    )
+
+    if not lab_request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lab request not found",
+        )
+
+    visit = (
+        db.query(Visit)
+        .filter(Visit.id == lab_request.visit_id)
+        .first()
+    )
+
+    if not visit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visit not found",
+        )
+
+    if visit.clinic_id != current_user.clinic_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cross-clinic access denied",
+        )
+
+    if enforce_visit_status and visit.status != VisitStatus.LAB_REQUESTED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Lab access denied. Visit is in state {visit.status}",
+        )
+
+    return lab_request
+
+
+def require_lab_request_access_for_result(
+    lab_request_id: UUID,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LabRequest:
+    lab_request = _require_lab_request_access_base(
+        lab_request_id,
+        db=db,
+        current_user=current_user,
+        enforce_visit_status=True,
+    )
+
+    if lab_request.status == LabRequestStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Lab request already completed",
+        )
+
+    return lab_request
+
+
+def require_lab_request_access_for_complete(
+    lab_request_id: UUID,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LabRequest:
+    return _require_lab_request_access_base(
+        lab_request_id,
+        db=db,
+        current_user=current_user,
+        enforce_visit_status=True,
+    )
+
+
+def require_lab_request_access_for_read(
+    lab_request_id: UUID,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LabRequest:
+    return _require_lab_request_access_base(
+        lab_request_id,
+        db=db,
+        current_user=current_user,
+        enforce_visit_status=False,
+    )
+
+
 
 def require_lab_user(user=Depends(get_current_user)):
     if user.role != UserRole.LAB:

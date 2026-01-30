@@ -1,5 +1,5 @@
 # app/schemas/visit.py
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
@@ -14,6 +14,7 @@ from app.shared.enums import VisitStatus
 class VisitResponse(BaseModel):
     id: UUID
     patient_id: UUID
+    patient_name: Optional[str] = None
     clinic_id: UUID
     status: VisitStatus
     assigned_doctor_id: Optional[UUID]
@@ -22,8 +23,7 @@ class VisitResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ---------------------------

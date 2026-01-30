@@ -47,3 +47,13 @@ def require_doctor(user=Depends(get_current_user)):
             detail="Doctor access required",
         )
     return user
+
+
+# Clinic Admin role required
+def require_clinic_admin(user=Depends(get_current_user)):
+    if user.role != UserRole.CLINIC_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Clinic Admin access required",
+        )
+    return user

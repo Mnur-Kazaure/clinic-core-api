@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.shared.enums import PrescriptionStatus
+from app.shared.enums import PrescriptionStatus, RecordStatus
 
 
 class Prescription(Base):
@@ -30,6 +30,11 @@ class Prescription(Base):
 
     visit_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("visits.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    clinic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("clinics.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -54,6 +59,22 @@ class Prescription(Base):
     status: Mapped[PrescriptionStatus] = mapped_column(
         Enum(PrescriptionStatus, name="prescription_status"),
         nullable=False,
+    )
+
+    record_status: Mapped[RecordStatus] = mapped_column(
+        Enum(RecordStatus, name="record_status"),
+        nullable=False,
+        default=RecordStatus.DRAFT,
+    )
+
+    void_reason: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     issued_at: Mapped[datetime] = mapped_column(

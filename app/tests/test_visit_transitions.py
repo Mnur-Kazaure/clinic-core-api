@@ -9,7 +9,7 @@ def test_reception_can_move_registered_to_waiting(db, receptionist, visit_regist
     guard_can_transition(
         db=db,
         visit=visit_registered,
-        to_status=VisitStatus.WAITING,
+        to_status=VisitStatus.TRIAGED,
         user=receptionist,
     )
 
@@ -19,6 +19,6 @@ def test_invalid_transition_registered_to_lab_fails(db, receptionist, visit_regi
         guard_can_transition(
             db=db,
             visit=visit_registered,
-            to_status=VisitStatus.LAB,
+            to_status=VisitStatus.LAB_REQUESTED,
             user=receptionist,
         )

@@ -1,29 +1,42 @@
 # app/schemas/auth.py
-from pydantic import BaseModel, EmailStr, Field
+from typing import Literal
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from uuid import UUID
+from pydantic import BaseModel
 from app.shared.enums import UserRole
 
-# Current AUth implementationn
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
 
 
-
 class TokenResponse(BaseModel):
     access_token: str
-    token_type: str = "bearer"
+    refresh_token: str
+    token_type: Literal["bearer"] = "bearer"
 
 
-# Added now
-class ClinicRegistrationRequest(BaseModel):
-    clinic_name: str = Field(..., min_length=2)
-    admin_email: EmailStr
-    admin_password: str = Field(..., min_length=8)
+# Alias — NOT a new schema
+RefreshTokenResponse = TokenResponse
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class RevokeTokenRequest(BaseModel):
+    refresh_token: str
 
 
 
-class StaffCreateRequest(BaseModel):
-    full_name: str = Field(..., min_length=2)
-    email: EmailStr
-    password: str = Field(..., min_length=8)
+
+class MeResponse(BaseModel):
+    id: UUID
+    email: str
+    full_name: str | None
     role: UserRole
+    clinic_id: UUID
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)

@@ -1,15 +1,15 @@
-from datetime import datetime
-from uuid import UUID
+# app/models/refresh_token.py
+
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    Column,
+    String,
     DateTime,
     ForeignKey,
-    String,
-    UniqueConstraint,
+    Index,
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
@@ -17,35 +17,60 @@ from app.models.base import Base
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    user_id = Column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+    id: Mapped[UUID] = mapped_column(
+        primary_key=True,
+        default=uuid4,
     )
 
-    token_hash = Column(String(64), nullable=False, unique=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
-    expires_at = Column(DateTime, nullable=False)
-    revoked_at = Column(DateTime, nullable=True)
+    token_hash: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
 
-    replaced_by = Column(
-        PG_UUID(as_uuid=True),
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
         nullable=True,
     )
 
-    user_agent = Column(String(255), nullable=True)
-    ip_address = Column(String(45), nullable=True)
-
-    created_at = Column(
-        DateTime,
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
-        default=datetime.utcnow,
     )
 
-    # Optional but correct: ORM navigation
-    user = relationship("User", backref="refresh_tokens")
+    device_id: Mapped[str | None] = mapped_column(
+        String(64),
+        default=None,
+        nullable=True,
+        index=True,
+    )
+
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
+        nullable=True,
+        index=True,
+    )
 
     __table_args__ = (
-        UniqueConstraint("token_hash", name="uq_refresh_tokens_token_hash"),
+        Index(
+            "ix_refresh_tokens_active",
+            "user_id",
+            "expires_at",
+        ),
     )

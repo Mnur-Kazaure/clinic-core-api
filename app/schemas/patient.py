@@ -1,6 +1,7 @@
+# app/schemas/patient.py
 from uuid import UUID
 from datetime import date
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from app.shared.enums import Gender
 
 
@@ -19,13 +20,15 @@ class PatientCreateSchema(BaseModel):
 class PatientReadSchema(BaseModel):
     """
     Schema returned after patient creation or retrieval.
+    Reception requires this payload to confirm identity and contact details.
     """
     id: UUID
-    full_name: str
     clinic_id: UUID
+    full_name: str
+    date_of_birth: date
     gender: Gender
+    phone_number: str
+    address: str
+    occupation: str
 
-    class Config:
-        from_attributes = True
-
-
+    model_config = ConfigDict(from_attributes=True)

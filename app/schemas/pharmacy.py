@@ -1,5 +1,5 @@
 # app/schemas/pharmacy.py
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel, UUID4, ConfigDict
 
 
 # -----------------------------
@@ -21,5 +21,4 @@ class DispenseResponse(BaseModel):
     pharmacist_id: UUID4
     quantity: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

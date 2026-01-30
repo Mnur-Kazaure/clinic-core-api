@@ -8,6 +8,15 @@ from app.models.visit import Visit
 from app.shared.enums import VisitStatus, UserRole
 
 
+def require_pharmacy_user(user=Depends(get_current_user)):
+    if user.role != UserRole.PHARMACY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Pharmacy access required",
+        )
+    return user
+
+
 def require_pharmacy_access(
     visit_id: UUID,
     db=Depends(get_db),

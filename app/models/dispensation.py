@@ -9,6 +9,10 @@ class Dispensation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     prescription_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("prescriptions.id"))
+    clinic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("clinics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     pharmacist_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
 
     quantity: Mapped[int] = mapped_column(Integer)

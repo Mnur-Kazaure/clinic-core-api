@@ -77,6 +77,18 @@ def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
             f"Role {user.role} cannot transition visit to {to_status}"
         )
 
+    # 3️⃣ Lab request must exist before marking visit as LAB_REQUESTED
+    if to_status == VisitStatus.LAB_REQUESTED:
+        lab_count = (
+            db.query(LabRequest)
+            .filter(LabRequest.visit_id == visit.id)
+            .count()
+        )
+        if lab_count == 0:
+            raise PermissionError(
+                "Cannot request labs: no lab order exists for this visit"
+            )
+
     # 5️⃣ Assigned doctor enforcement
     if (
         user.role == UserRole.DOCTOR

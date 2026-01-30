@@ -1,6 +1,6 @@
 # app/api/v1/consultation.py
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.core.database import get_db
 from app.core.auth.dependencies import get_current_user
 
@@ -13,9 +13,14 @@ from app.schemas.consultation import (
     ConsultationUpdateRequest,
 )
 from app.services.consultation_service import ConsultationService
+from app.services.access_log_service import AccessLogService
 from app.shared.enums import VisitStatus
-from app.models.consultation import Consultation
 
+
+from app.core.guards.consultation_guards import (
+    require_consultation_access,
+    require_consultation_access_by_visit,
+)
 
 router = APIRouter(prefix="/consultations", tags=["Consultations"])
 
@@ -69,16 +74,29 @@ def start_consultation(
     response_model=ConsultationResponse,
 )
 def get_consultation_by_visit(
-    visit_id: UUID,
+    purpose_of_use: str = Query(..., min_length=2),
+    reason: str = Query(..., min_length=2),
+    break_glass: bool = Query(False),
     db=Depends(get_db),
     current_user=Depends(get_current_user),
+    consultation=Depends(require_consultation_access_by_visit),
 ):
-    service = ConsultationService(db)
-    consultation = service.get_by_visit(visit_id)
-
-    if not consultation:
-        raise HTTPException(status_code=404, detail="Consultation not found")
-
+    if break_glass:
+        AccessLogService(db).log_break_glass(
+            actor=current_user,
+            clinic_id=current_user.clinic_id,
+            patient_id=consultation.visit.patient_id,
+            purpose_of_use=purpose_of_use,
+            reason=reason,
+        )
+    else:
+        AccessLogService(db).log_chart_read(
+            actor=current_user,
+            clinic_id=current_user.clinic_id,
+            patient_id=consultation.visit.patient_id,
+            purpose_of_use=purpose_of_use,
+            reason=reason,
+        )
     return consultation
 
 # Update an existing consultation
@@ -90,20 +108,9 @@ def update_consultation(
     consultation_id: UUID,
     payload: ConsultationUpdateRequest,
     db=Depends(get_db),
-    current_user=Depends(require_doctor),
+    current_user=Depends(get_current_user),
+    consultation=Depends(require_consultation_access),
 ):
-    consultation = (
-        db.query(Consultation)
-        .filter(Consultation.id == consultation_id)
-        .first()
-    )
-
-    if not consultation:
-        raise HTTPException(
-            status_code=404,
-            detail="Consultation not found",
-        )
-
     service = ConsultationService(db)
 
     return service.update_consultation(
@@ -113,6 +120,7 @@ def update_consultation(
         presenting_complaints=payload.presenting_complaints,
         diagnosis=payload.diagnosis,
         notes=payload.notes,
+        doctor_full_name=payload.doctor_full_name,
     )
 
 
@@ -123,20 +131,9 @@ def update_consultation(
 def complete_consultation(
     consultation_id: UUID,
     db=Depends(get_db),
-    current_user=Depends(require_doctor),
+    current_user=Depends(get_current_user),
+    consultation=Depends(require_consultation_access),
 ):
-    consultation = (
-        db.query(Consultation)
-        .filter(Consultation.id == consultation_id)
-        .first()
-    )
-
-    if not consultation:
-        raise HTTPException(
-            status_code=404,
-            detail="Consultation not found",
-        )
-
     service = ConsultationService(db)
 
     return service.complete_consultation(

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, DateTime
+from sqlalchemy import Enum, ForeignKey, DateTime, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -39,12 +39,17 @@ class Visit(Base):
         nullable=False,
     )
 
-    started_at: Mapped[datetime | None] = mapped_column(
+    started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        nullable=True,
+        nullable=False,
+        server_default=func.now(),
     )
 
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("id", "clinic_id", name="uq_visits_id_clinic"),
     )

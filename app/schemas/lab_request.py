@@ -1,5 +1,5 @@
 # app/schemas/lab_request.py
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from datetime import datetime
 from app.shared.enums import LabRequestStatus
@@ -19,5 +19,4 @@ class LabRequestResponse(BaseModel):
     created_at: datetime
     completed_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

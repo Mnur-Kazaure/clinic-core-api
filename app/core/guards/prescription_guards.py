@@ -26,11 +26,6 @@ def require_doctor_for_prescription(
 ):
     consultation_id = payload.consultation_id
 
-# def require_doctor_for_prescription(
-#     consultation_id: UUID,
-#     db=Depends(get_db),
-#     current_user=Depends(get_current_user),
-# ):
     # Role enforcement
     if current_user.role != UserRole.DOCTOR:
         raise HTTPException(

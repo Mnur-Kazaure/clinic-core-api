@@ -1,7 +1,7 @@
 # app/models/lab_request.py
 from sqlalchemy import String, ForeignKey, Enum, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from app.models.base import Base
@@ -19,6 +19,11 @@ class LabRequest(Base):
         index=True,
     )
 
+    clinic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("clinics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
     requested_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"),
         nullable=False,
@@ -34,7 +39,7 @@ class LabRequest(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

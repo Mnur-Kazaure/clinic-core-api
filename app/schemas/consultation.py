@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # ---------------------------
@@ -23,6 +23,7 @@ class ConsultationUpdateRequest(BaseModel):
     presenting_complaints: Optional[str] = None
     diagnosis: Optional[str] = None
     notes: Optional[str] = None
+    doctor_full_name: Optional[str] = None
 
 
 # ---------------------------
@@ -33,6 +34,7 @@ class ConsultationResponse(BaseModel):
     id: UUID
     visit_id: UUID
     doctor_id: UUID
+    doctor_full_name: Optional[str]
 
     vitals: Optional[str]
     presenting_complaints: Optional[str]
@@ -45,5 +47,4 @@ class ConsultationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

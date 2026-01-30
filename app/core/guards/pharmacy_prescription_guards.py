@@ -5,7 +5,8 @@ from uuid import UUID
 from app.core.dependencies import get_db
 from app.core.auth import get_current_user
 from app.models.prescription import Prescription
-from app.shared.enums import UserRole, PrescriptionStatus
+from app.models.visit import Visit
+from app.shared.enums import UserRole, PrescriptionStatus, VisitStatus
 
 
 def require_pharmacy_for_dispense(
@@ -35,6 +36,30 @@ def require_pharmacy_for_dispense(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Prescription is not available for dispensing",
+        )
+
+    visit = (
+        db.query(Visit)
+        .filter(Visit.id == prescription.visit_id)
+        .first()
+    )
+
+    if not visit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visit not found",
+        )
+
+    if visit.clinic_id != current_user.clinic_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cross-clinic access denied",
+        )
+
+    if visit.status != VisitStatus.PHARMACY_PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Pharmacy access denied. Visit is in state {visit.status}",
         )
 
     return prescription

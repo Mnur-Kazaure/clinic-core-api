@@ -22,23 +22,61 @@ def upgrade() -> None:
     Fix idempotency_keys.created_at default to now()
     SAFE: no table drops, no enum changes
     """
-    op.alter_column(
-        "idempotency_keys",
-        "created_at",
-        existing_type=postgresql.TIMESTAMP(),
-        server_default=sa.text("now()"),
-        nullable=False,
-    )
+    conn = op.get_bind()
+    if conn.dialect.name == "postgresql":
+        exists = conn.execute(sa.text("SELECT to_regclass('public.idempotency_keys')")).scalar()
+        if not exists:
+            return
+    else:
+        inspector = sa.inspect(conn)
+        if "idempotency_keys" not in inspector.get_table_names():
+            return
+
+    if conn.dialect.name == "sqlite":
+        with op.batch_alter_table("idempotency_keys") as batch:
+            batch.alter_column(
+                "created_at",
+                existing_type=postgresql.TIMESTAMP(),
+                server_default=sa.text("now()"),
+                nullable=False,
+            )
+    else:
+        op.alter_column(
+            "idempotency_keys",
+            "created_at",
+            existing_type=postgresql.TIMESTAMP(),
+            server_default=sa.text("now()"),
+            nullable=False,
+        )
 
 
 def downgrade() -> None:
     """
     Revert created_at default
     """
-    op.alter_column(
-        "idempotency_keys",
-        "created_at",
-        existing_type=postgresql.TIMESTAMP(),
-        server_default=None,
-        nullable=False,
-    )
+    conn = op.get_bind()
+    if conn.dialect.name == "postgresql":
+        exists = conn.execute(sa.text("SELECT to_regclass('public.idempotency_keys')")).scalar()
+        if not exists:
+            return
+    else:
+        inspector = sa.inspect(conn)
+        if "idempotency_keys" not in inspector.get_table_names():
+            return
+
+    if conn.dialect.name == "sqlite":
+        with op.batch_alter_table("idempotency_keys") as batch:
+            batch.alter_column(
+                "created_at",
+                existing_type=postgresql.TIMESTAMP(),
+                server_default=None,
+                nullable=False,
+            )
+    else:
+        op.alter_column(
+            "idempotency_keys",
+            "created_at",
+            existing_type=postgresql.TIMESTAMP(),
+            server_default=None,
+            nullable=False,
+        )

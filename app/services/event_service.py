@@ -1,0 +1,108 @@
+# app/services/event_service.py
+import json
+from app.models.event_log import EventLog
+
+
+ALLOWED_EVENT_TYPES = {
+    "PATIENT_CREATED",
+    "PROVISIONAL_CREATED",
+    "IDENTITY_VERIFIED",
+    "IDENTITY_MERGED",
+    "IDENTITY_SPLIT",
+    "IDENTITY_ROLLED_BACK",
+    "ENTRY_DRAFTED",
+    "ENTRY_SIGNED",
+    "ENTRY_AMENDED",
+    "ENTRY_VOIDED",
+    "LAB_ORDERED",
+    "LAB_RESULT_POSTED",
+    "PATIENT_ADMITTED",
+    "BED_ASSIGNED",
+    "BED_TRANSFERRED",
+    "PATIENT_DISCHARGED",
+    "PRIORITY_ESCALATED",
+    "PRIORITY_DEESCALATED",
+    "ACCESS_LOGGED",
+    "BREAK_GLASS_USED",
+    "OFFLINE_SYNC_APPLIED",
+}
+
+EMITTER_EVENT_MAP = {
+    "identity": {
+        "PATIENT_CREATED",
+    "PROVISIONAL_CREATED",
+    "IDENTITY_VERIFIED",
+    "IDENTITY_MERGED",
+    "IDENTITY_SPLIT",
+    "IDENTITY_ROLLED_BACK",
+    },
+    "clinical": {
+        "ENTRY_DRAFTED",
+        "ENTRY_SIGNED",
+        "ENTRY_AMENDED",
+        "ENTRY_VOIDED",
+    },
+    "lab": {
+        "LAB_ORDERED",
+        "LAB_RESULT_POSTED",
+    },
+    "admission": {
+        "PATIENT_ADMITTED",
+        "PATIENT_DISCHARGED",
+    },
+    "bed": {
+        "BED_ASSIGNED",
+        "BED_TRANSFERRED",
+    },
+    "access": {
+        "ACCESS_LOGGED",
+        "BREAK_GLASS_USED",
+    },
+    "sync": {
+        "OFFLINE_SYNC_APPLIED",
+    },
+    "clinical_priority_service": {
+        "PRIORITY_ESCALATED",
+        "PRIORITY_DEESCALATED",
+    },
+}
+
+
+class EventService:
+    def __init__(self, db):
+        self.db = db
+
+    def emit(
+        self,
+        *,
+        event_type: str,
+        actor_id,
+        actor_role: str,
+        clinic_id,
+        payload: dict,
+        emitter: str,
+        patient_id=None,
+    ) -> EventLog:
+        if event_type not in ALLOWED_EVENT_TYPES:
+            raise ValueError(f"Event type not allowed: {event_type}")
+
+        if emitter not in EMITTER_EVENT_MAP:
+            raise ValueError(f"Emitter not recognized: {emitter}")
+
+        if event_type not in EMITTER_EVENT_MAP[emitter]:
+            raise ValueError(
+                f"Emitter {emitter} not permitted to emit {event_type}"
+            )
+
+        event = EventLog(
+            event_type=event_type,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            clinic_id=clinic_id,
+            patient_id=patient_id,
+            payload=json.dumps(payload),
+        )
+        self.db.add(event)
+        self.db.commit()
+        self.db.refresh(event)
+        return event
