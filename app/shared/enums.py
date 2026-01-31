@@ -95,6 +95,35 @@ class AuditItemType(str, Enum):
     EVENT_LOG = "EVENT_LOG"
 
 # ------------------------------
+# Billing / Ledger
+# ------------------------------
+
+class BillingEntryType(str, Enum):
+    CHARGE = "CHARGE"
+    PAYMENT = "PAYMENT"
+    ADJUSTMENT = "ADJUSTMENT"
+    REFUND = "REFUND"
+    WRITE_OFF = "WRITE_OFF"
+    REVERSAL = "REVERSAL"
+
+
+class BillingReasonCode(str, Enum):
+    SERVICE = "SERVICE"
+    LAB_TEST = "LAB_TEST"
+    MEDICATION = "MEDICATION"
+    PROCEDURE = "PROCEDURE"
+    CASH = "CASH"
+    CARD = "CARD"
+    TRANSFER = "TRANSFER"
+    INSURANCE = "INSURANCE"
+    DISCOUNT = "DISCOUNT"
+    CORRECTION = "CORRECTION"
+    REFUND = "REFUND"
+    WRITE_OFF = "WRITE_OFF"
+    REVERSAL = "REVERSAL"
+    OTHER = "OTHER"
+
+# ------------------------------
 # Admissions / Beds
 # ------------------------------
 

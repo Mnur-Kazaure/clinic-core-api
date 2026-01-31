@@ -47,6 +47,12 @@ class Clinic(Base):
         nullable=True,
     )
 
+    billing_currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="NGN",
+    )
+
     description: Mapped[str | None] = mapped_column(
         String(1000),
         nullable=True,
