@@ -17,3 +17,21 @@
 - audit_review_cases + audit_review_items + audit_review_case_history with append-only triggers.
 - RBAC enforced for audit review operations.
 - Global prevention of break-glass on write endpoints (middleware + service guards).
+
+## Phase 6 — Billing & Claims Ledger
+- Status: SEALED
+- Date: 2026-01-31
+- Scope: Append-only billing ledger, charge catalog, clinic currency discipline, and billing RBAC.
+
+### Evidence (Proof Gates)
+- Fresh Postgres DB: `clinic_phase6_pg`
+- Alembic head: `e6f7a8b9c0d1`
+- Test suite: `pytest app/tests` with `POSTGRES_TEST_URL` → **56 passed**
+
+### Controls Verified
+- billing_ledger_entries append-only enforcement with DB triggers.
+- Composite tenant FKs + unique (id, clinic_id) for self-FK integrity.
+- Entry-type context and sign rules enforced.
+- Reversal rules enforced (no reversal of reversal; related entry required).
+- Identity-merge reads include transitive mapped-from patient IDs.
+- Clinic currency discipline enforced for ledger writes.
