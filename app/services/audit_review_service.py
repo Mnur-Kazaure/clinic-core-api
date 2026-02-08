@@ -41,14 +41,14 @@ class AuditReviewService:
         if payload.item_type == AuditItemType.ACCESS_LOG:
             if not payload.access_log_id or payload.event_log_id:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="Access log item requires access_log_id only",
                 )
             self._ensure_access_log(payload.access_log_id, current_user.clinic_id)
         else:
             if not payload.event_log_id or payload.access_log_id:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="Event log item requires event_log_id only",
                 )
             self._ensure_event_log(payload.event_log_id, current_user.clinic_id)

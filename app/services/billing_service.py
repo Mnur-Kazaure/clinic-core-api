@@ -69,12 +69,12 @@ class BillingService:
                 amount_minor = catalog.default_amount_minor
         if amount_minor is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="amount_minor is required when no charge code is provided",
             )
         if amount_minor <= 0:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Charge amount must be positive",
             )
 
@@ -117,7 +117,7 @@ class BillingService:
         )
         if amount_minor <= 0:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Payment amount must be positive",
             )
         entry = BillingLedgerEntry(
@@ -172,7 +172,7 @@ class BillingService:
             )
         if len(justification.strip()) < 10:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Justification must be at least 10 characters",
             )
 
