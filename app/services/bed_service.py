@@ -4,11 +4,13 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.admission import Admission
 from app.models.bed import Bed
 from app.models.bed_assignment import BedAssignment
+from app.models.ward import Ward
 from app.shared.enums import AdmissionStatus, BedAssignmentType, BedStatus
 from app.services.event_service import EventService
 from app.services.access_log_service import AccessLogService
@@ -19,6 +21,54 @@ class BedService:
         self.db = db
         self.event_service = EventService(db)
         self.access_log_service = AccessLogService(db)
+
+    def list_wards(
+        self,
+        *,
+        clinic_id: UUID,
+    ) -> list[Ward]:
+        return (
+            self.db.query(Ward)
+            .filter(
+                Ward.clinic_id == clinic_id,
+                Ward.active.is_(True),
+            )
+            .order_by(Ward.name.asc())
+            .all()
+        )
+
+    def list_beds(
+        self,
+        *,
+        clinic_id: UUID,
+        available_only: bool = False,
+        ward_id: UUID | None = None,
+    ) -> list[Bed]:
+        query = self.db.query(Bed).filter(
+            Bed.clinic_id == clinic_id,
+            Bed.active.is_(True),
+        )
+
+        if ward_id is not None:
+            query = query.filter(Bed.ward_id == ward_id)
+
+        if available_only:
+            query = (
+                query.outerjoin(
+                    BedAssignment,
+                    and_(
+                        BedAssignment.bed_id == Bed.id,
+                        BedAssignment.clinic_id == clinic_id,
+                        BedAssignment.released_at.is_(None),
+                    ),
+                )
+                .filter(
+                    Bed.status == BedStatus.AVAILABLE,
+                    BedAssignment.id.is_(None),
+                )
+            )
+
+        return query.order_by(Bed.bed_label.asc()).all()
 
     def assign_bed(
         self,
@@ -42,6 +92,20 @@ class BedService:
             raise HTTPException(status_code=403, detail="Cross-clinic access denied")
         if admission.status != AdmissionStatus.ACTIVE:
             raise HTTPException(status_code=409, detail="Admission not active")
+
+        active_assignment = (
+            self.db.query(BedAssignment)
+            .filter(
+                BedAssignment.admission_id == admission.id,
+                BedAssignment.released_at.is_(None),
+            )
+            .first()
+        )
+        if active_assignment:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Admission already has an active bed assignment; use transfer",
+            )
 
         bed = (
             self.db.query(Bed)
@@ -121,17 +185,6 @@ class BedService:
         if admission.status != AdmissionStatus.ACTIVE:
             raise HTTPException(status_code=409, detail="Admission not active")
 
-        current = (
-            self.db.query(BedAssignment)
-            .filter(
-                BedAssignment.admission_id == admission.id,
-                BedAssignment.released_at.is_(None),
-            )
-            .first()
-        )
-        if not current:
-            raise HTTPException(status_code=409, detail="No active bed assignment")
-
         new_bed = (
             self.db.query(Bed)
             .filter(Bed.id == to_bed_id)
@@ -149,6 +202,17 @@ class BedService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Break-glass not allowed on write operations",
             )
+
+        current = (
+            self.db.query(BedAssignment)
+            .filter(
+                BedAssignment.admission_id == admission.id,
+                BedAssignment.released_at.is_(None),
+            )
+            .first()
+        )
+        if not current:
+            raise HTTPException(status_code=409, detail="No active bed assignment")
 
         current.released_at = datetime.now(timezone.utc)
         old_bed = (

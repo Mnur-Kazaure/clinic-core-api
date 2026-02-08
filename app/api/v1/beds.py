@@ -1,4 +1,6 @@
 # app/api/v1/beds.py
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import get_db
@@ -9,6 +11,24 @@ from app.services.bed_service import BedService
 
 
 router = APIRouter(prefix="/beds", tags=["beds"])
+
+@router.get(
+    "",
+    response_model=list[BedResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_beds(
+    available_only: bool = False,
+    ward_id: UUID | None = None,
+    db=Depends(get_db),
+    user=Depends(require_bed_management_role),
+):
+    service = BedService(db)
+    return service.list_beds(
+        clinic_id=user.clinic_id,
+        available_only=available_only,
+        ward_id=ward_id,
+    )
 
 
 @router.post(
