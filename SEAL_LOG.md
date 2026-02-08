@@ -35,3 +35,37 @@
 - Reversal rules enforced (no reversal of reversal; related entry required).
 - Identity-merge reads include transitive mapped-from patient IDs.
 - Clinic currency discipline enforced for ledger writes.
+
+## Phase 7 — Patient Medical Record + MRN (PMR)
+- Status: SEALED
+- Date: 2026-02-01
+- Scope: PMR read semantics, MRN issuance/retirement, revocation-aware identity closure, and audit-safe access logging.
+
+### Evidence (Proof Gates)
+- Fresh Postgres DB: `clinic_pmr_pg`
+- Alembic head: `f7a8b9c0d1e2`
+- Test suite: `pytest app/tests` with `POSTGRES_TEST_URL` → **63 passed**
+
+### Controls Verified
+- MRN uniqueness is DB-enforced and case-insensitive (CITEXT + UNIQUE).
+- Single ACTIVE MRN per patient per clinic enforced via partial unique index.
+- MRN issuance is race-safe (sequence row lock + transactional insert).
+- Identity closure excludes revoked mappings and detects cycles.
+- PMR access logging emits `ACCESS_LOGGED` and `BREAK_GLASS_USED` with `patient_id_requested` + `patient_id_canonical`.
+- Break-glass is read-only and uses Phase 5 access log invariants.
+
+## Phase 8 — Admission Stability + Bed Assignment
+- Status: SEALED
+- Date: 2026-02-08
+- Scope: Admission discharge disposition semantics and bed assignment invariants.
+
+### Evidence (Proof Gates)
+- Fresh Postgres DB: `clinic_admission_pg`
+- Alembic head: `ad12ef34ab56`
+- Test suite: `pytest app/tests` with `POSTGRES_TEST_URL` → **94 passed** (2 deprecation warnings)
+
+### Controls Verified
+- DISCHARGED admissions require `discharged_at` + `discharge_disposition`; CANCELLED requires `cancel_reason` + `cancelled_at` (mutually exclusive with discharge).
+- Disposition constraints enforced: TRANSFERRED_OUT requires `transferred_to_facility`; DECEASED requires `death_pronounced_at`; transfer and death are mutually exclusive.
+- Bed assignment invariants: an admission cannot be assigned a second active bed; transfers require an existing active assignment.
+- Bed occupancy is derived from active `bed_assignments` (`released_at IS NULL`); beds.status remains serviceability only.
