@@ -88,6 +88,7 @@ class BillingService:
             currency=currency,
             description=description,
             reason_code=reason_code,
+            charge_code=code,
             external_ref=None,
             related_entry_id=None,
             actor_id=actor.id,
@@ -109,6 +110,17 @@ class BillingService:
         external_ref: str | None,
         actor,
     ) -> BillingLedgerEntry:
+        if reason_code not in {BillingReasonCode.CASH, BillingReasonCode.TRANSFER}:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only CASH or TRANSFER payment methods are supported",
+            )
+        if reason_code == BillingReasonCode.TRANSFER:
+            if external_ref is None or len(external_ref.strip()) < 3:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Transfer reference is required for bank transfers",
+                )
         patient = self._get_patient(patient_id, actor.clinic_id)
         clinic = self._get_clinic(actor.clinic_id)
         resolved_patient_id = self._resolve_canonical_patient_id(
