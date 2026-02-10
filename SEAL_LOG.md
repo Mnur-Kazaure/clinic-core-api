@@ -69,3 +69,44 @@
 - Disposition constraints enforced: TRANSFERRED_OUT requires `transferred_to_facility`; DECEASED requires `death_pronounced_at`; transfer and death are mutually exclusive.
 - Bed assignment invariants: an admission cannot be assigned a second active bed; transfers require an existing active assignment.
 - Bed occupancy is derived from active `bed_assignments` (`released_at IS NULL`); beds.status remains serviceability only.
+
+## Phase 9 — ANC/Maternity v1.0
+- Status: READY_FOR_SEAL (manual UI proof gate pending)
+- Date: 2026-02-08
+- Scope: Service-line routing (`OPD|ANC|MATERNITY`), owner-role enforcement, ANC/Maternity queue/workspace flows, and scoped PMR summary access for CHEW/MIDWIFE.
+
+### Evidence (Current)
+- Alembic head migration run completed.
+- Backend suite run on target branch: `pytest app/tests` → **94 passed**.
+- New ANC/Maternity endpoints and services are present (`/api/v1/anc`, `/api/v1/maternity`).
+
+### Pending Proof Gate (Required Before Seal)
+- Reception manual smoke: start ANC/MATERNITY visits and assign correct owners.
+- CHEW manual smoke: queue visibility, episode/encounter create, sign immutability.
+- MIDWIFE manual smoke: queue visibility, delivery draft/sign, postnatal + family planning append.
+- PMR policy smoke: CHEW/MIDWIFE summary-only access allowed only for assigned active visit.
+
+## Phase 10 — Flexible Visit Workflow v1.0.1
+- Status: READY_FOR_SEAL (final runtime smoke pending)
+- Date: 2026-02-08
+- Scope: Outstanding-work completion pre-checks, override completion with reason codes, optimistic concurrency, and pharmacy/visit continuity.
+
+### Evidence (Current)
+- Postgres regression gate:
+  - `app/tests/test_flexible_visit_workflow_completion.py`
+  - `app/tests/test_visit_start_service_line_owner.py`
+  - `app/tests/test_visit_start_after_completion.py`
+  - Result: **11 passed**
+
+### Controls Verified
+- Normal completion blocks with `VISIT_HAS_OUTSTANDING_WORK` when labs/prescriptions are pending.
+- Override completion requires reason code; `OTHER` requires min-length reason text.
+- Override completion records immutable history snapshot (`pending_labs_count_snapshot`, `unfulfilled_prescriptions_count_snapshot`) with source `override`.
+- Version conflict is enforced through `expected_version`.
+- Visit restart-after-completion behavior remains valid.
+
+### Pending Proof Gate (Required Before Seal)
+- Runtime UI smoke in Reception:
+  - Complete visit (normal path) when outstanding is zero.
+  - Complete visit (override path) with reason picker and confirmation modal.
+  - Confirm user guidance links and no dead-end workflow traps.
