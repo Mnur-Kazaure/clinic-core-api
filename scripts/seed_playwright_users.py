@@ -66,6 +66,11 @@ def _hash_password(password: str) -> str:
     return bcrypt.hashpw(truncated, bcrypt.gensalt()).decode("utf-8")
 
 
+def _derive_colleague_email(email: str) -> str:
+    local, domain = email.split("@", 1)
+    return f"{local}+colleague@{domain}"
+
+
 def _resolve_role_value(primary: str, fallback: str) -> str:
     """Use newer role when available, otherwise fall back for older branches."""
     role = getattr(UserRole, primary, None)
@@ -101,6 +106,14 @@ def main() -> None:
             full_name="E2E CHEW",
             role_value=chew_role_value,
         )
+        _upsert_user(
+            db,
+            clinic_id=clinic.id,
+            email=_derive_colleague_email(args.chew_email),
+            password=args.chew_password,
+            full_name="E2E CHEW Colleague",
+            role_value=chew_role_value,
+        )
         midwife_role_value = _resolve_role_value("MIDWIFE", "LAB")
         _upsert_user(
             db,
@@ -108,6 +121,14 @@ def main() -> None:
             email=args.midwife_email,
             password=args.midwife_password,
             full_name="E2E Midwife",
+            role_value=midwife_role_value,
+        )
+        _upsert_user(
+            db,
+            clinic_id=clinic.id,
+            email=_derive_colleague_email(args.midwife_email),
+            password=args.midwife_password,
+            full_name="E2E Midwife Colleague",
             role_value=midwife_role_value,
         )
 

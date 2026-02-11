@@ -4,9 +4,15 @@ const apiBase = process.env.E2E_API_BASE_URL || 'http://localhost:8000/api';
 
 type Credentials = { email: string; password: string };
 
+function deriveColleagueEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  return `${local}+colleague@${domain}`;
+}
+
 function requireCredentials(): {
   reception: Credentials;
   chew: Credentials;
+  chewColleague: Credentials;
   midwife: Credentials;
 } {
   const receptionEmail = process.env.E2E_RECEPTION_EMAIL || '';
@@ -33,6 +39,10 @@ function requireCredentials(): {
   return {
     reception: { email: receptionEmail, password: receptionPassword },
     chew: { email: chewEmail, password: chewPassword },
+    chewColleague: {
+      email: deriveColleagueEmail(chewEmail),
+      password: chewPassword,
+    },
     midwife: { email: midwifeEmail, password: midwifePassword },
   };
 }
@@ -174,5 +184,73 @@ test.describe('ANC export role matrix', () => {
     const contentType = exportResponse.headers()['content-type'] || '';
     expect(contentType).toContain('application/pdf');
     await expect(page.getByRole('heading', { name: 'Export ANC PDF' })).not.toBeVisible();
+  });
+
+  test('CHEW can reassign ANC visit to colleague and colleague sees queue (UI)', async ({
+    page,
+    request,
+  }) => {
+    const creds = requireCredentials();
+    const seeded = await seedAncVisitForChew(request, creds.reception, creds.chew);
+
+    await loginApi(page.request, creds.chew);
+    await page.goto('/anc');
+    await expect(page.getByRole('heading', { name: 'ANC Dashboard' })).toBeVisible();
+
+    await page.getByRole('button', { name: new RegExp(seeded.patientName) }).click();
+    await page.getByRole('button', { name: 'Reassign Owner' }).click();
+    await expect(page.getByRole('heading', { name: 'Reassign ANC Owner' })).toBeVisible();
+
+    await page.locator('select').filter({ hasText: 'Select CHEW' }).selectOption({
+      label: 'E2E CHEW Colleague',
+    });
+    await page.getByRole('button', { name: /^Reassign$/ }).click();
+
+    await expect(
+      page.getByRole('button', { name: new RegExp(seeded.patientName) })
+    ).not.toBeVisible({ timeout: 15_000 });
+
+    await loginApi(page.request, creds.chewColleague);
+    await page.goto('/anc');
+    await expect(page.getByRole('heading', { name: 'ANC Dashboard' })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: new RegExp(seeded.patientName) })
+    ).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('CHEW can send ANC visit to maternity and MIDWIFE sees it in queue (UI)', async ({
+    page,
+    request,
+  }) => {
+    const creds = requireCredentials();
+    const seeded = await seedAncVisitForChew(request, creds.reception, creds.chew);
+
+    await loginApi(page.request, creds.chew);
+    await page.goto('/anc');
+    await expect(page.getByRole('heading', { name: 'ANC Dashboard' })).toBeVisible();
+
+    await page.getByRole('button', { name: new RegExp(seeded.patientName) }).click();
+    await page.getByRole('button', { name: 'Send to Maternity' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Send Visit to Maternity' })
+    ).toBeVisible();
+
+    await page.locator('select').filter({ hasText: 'Select Midwife' }).selectOption({
+      label: 'E2E Midwife',
+    });
+    await page.getByRole('button', { name: 'Confirm Send' }).click();
+
+    await expect(
+      page.getByRole('button', { name: new RegExp(seeded.patientName) })
+    ).not.toBeVisible({ timeout: 15_000 });
+
+    await loginApi(page.request, creds.midwife);
+    await page.goto('/maternity');
+    await expect(
+      page.getByRole('heading', { name: 'Maternity Dashboard' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: new RegExp(seeded.patientName) })
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
