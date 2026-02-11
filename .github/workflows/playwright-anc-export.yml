@@ -82,7 +82,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install alembic psycopg2-binary passlib[bcrypt] pytest
+          pip install alembic psycopg2-binary pytest
 
       - name: Validate e2e secrets
         run: |

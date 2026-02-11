@@ -3,6 +3,8 @@ uvicorn
 sqlalchemy
 python-jose[cryptography]
 PyJWT
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 pydantic
 python-dotenv
 pydantic-settings
