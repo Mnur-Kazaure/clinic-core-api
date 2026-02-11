@@ -1,10 +1,10 @@
 # app/schemas/visit.py
-from pydantic import BaseModel, ConfigDict
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Optional, Literal
 from uuid import UUID
 from datetime import datetime
 
-from app.shared.enums import VisitStatus
+from app.shared.enums import VisitStatus, VisitOverrideReasonCode, VisitServiceLine
 
 
 # ---------------------------
@@ -15,9 +15,17 @@ class VisitResponse(BaseModel):
     id: UUID
     patient_id: UUID
     patient_name: Optional[str] = None
+    patient_mrn: Optional[str] = None
+    consultation_status: Optional[str] = None
+    intake_emergency_flag: Optional[bool] = None
+    intake_emergency_reason: Optional[str] = None
+    intake_emergency_set_at: Optional[datetime] = None
     clinic_id: UUID
     status: VisitStatus
+    service_line: VisitServiceLine
     assigned_doctor_id: Optional[UUID]
+    has_active_admission: Optional[bool] = None
+    version: int
 
 
     created_at: datetime
@@ -32,6 +40,22 @@ class VisitResponse(BaseModel):
 
 class VisitTransitionRequest(BaseModel):
     to_status: VisitStatus
+    mode: Literal["normal", "override"] = "normal"
+    override_reason_code: Optional[VisitOverrideReasonCode] = None
+    override_reason_text: Optional[str] = None
+    expected_version: int
+
+
+class VisitReassignRequest(BaseModel):
+    assigned_doctor_id: UUID
+    expected_version: int
+    service_line: Optional[VisitServiceLine] = None
+    reason: Optional[str] = Field(default=None, min_length=2, max_length=200)
+
+
+class VisitIntakeFlagRequest(BaseModel):
+    flagged: bool
+    reason: str = Field(..., min_length=3)
 
 
 # ---------------------------
@@ -65,6 +89,7 @@ class VisitTimelineResponse(BaseModel):
 class VisitCreateRequest(BaseModel):
     patient_id: UUID
     assigned_doctor_id: UUID
+    service_line: VisitServiceLine = VisitServiceLine.OPD
 
 
 class VisitCreateResponse(VisitResponse):
