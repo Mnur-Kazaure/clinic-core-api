@@ -1,0 +1,168 @@
+name: Playwright E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/playwright-anc-export.yml"
+      - "clinic-app/**"
+      - "app/**"
+      - "alembic/**"
+      - "scripts/seed_playwright_users.py"
+      - "requirements.txt"
+      - "pnpm-lock.yaml"
+      - "clinic-app/package.json"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/playwright-anc-export.yml"
+      - "clinic-app/**"
+      - "app/**"
+      - "alembic/**"
+      - "scripts/seed_playwright_users.py"
+      - "requirements.txt"
+      - "pnpm-lock.yaml"
+      - "clinic-app/package.json"
+  schedule:
+    - cron: "30 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playwright-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  anc-export-role-matrix:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: clinic_user
+          POSTGRES_PASSWORD: clinic_password
+          POSTGRES_DB: clinic_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clinic_user -d clinic_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg2://clinic_user:clinic_password@localhost:5432/clinic_db
+      AUTH_JWT_SECRET_KEY: ci-test-secret
+      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS: 3600
+      AUTH_REFRESH_TOKEN_TTL_DAYS: 14
+      E2E_BASE_URL: http://localhost:3000
+      E2E_API_BASE_URL: http://localhost:8000/api
+      E2E_RECEPTION_EMAIL: ${{ secrets.E2E_RECEPTION_EMAIL }}
+      E2E_RECEPTION_PASSWORD: ${{ secrets.E2E_RECEPTION_PASSWORD }}
+      E2E_CHEW_EMAIL: ${{ secrets.E2E_CHEW_EMAIL }}
+      E2E_CHEW_PASSWORD: ${{ secrets.E2E_CHEW_PASSWORD }}
+      E2E_MIDWIFE_EMAIL: ${{ secrets.E2E_MIDWIFE_EMAIL }}
+      E2E_MIDWIFE_PASSWORD: ${{ secrets.E2E_MIDWIFE_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install alembic psycopg2-binary passlib[bcrypt] pytest
+
+      - name: Validate e2e secrets
+        run: |
+          test -n "$E2E_RECEPTION_EMAIL" || (echo "Missing E2E_RECEPTION_EMAIL secret" && exit 1)
+          test -n "$E2E_RECEPTION_PASSWORD" || (echo "Missing E2E_RECEPTION_PASSWORD secret" && exit 1)
+          test -n "$E2E_CHEW_EMAIL" || (echo "Missing E2E_CHEW_EMAIL secret" && exit 1)
+          test -n "$E2E_CHEW_PASSWORD" || (echo "Missing E2E_CHEW_PASSWORD secret" && exit 1)
+          test -n "$E2E_MIDWIFE_EMAIL" || (echo "Missing E2E_MIDWIFE_EMAIL secret" && exit 1)
+          test -n "$E2E_MIDWIFE_PASSWORD" || (echo "Missing E2E_MIDWIFE_PASSWORD secret" && exit 1)
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Seed Playwright users
+        run: |
+          python scripts/seed_playwright_users.py \
+            --reception-email "$E2E_RECEPTION_EMAIL" \
+            --reception-password "$E2E_RECEPTION_PASSWORD" \
+            --chew-email "$E2E_CHEW_EMAIL" \
+            --chew-password "$E2E_CHEW_PASSWORD" \
+            --midwife-email "$E2E_MIDWIFE_EMAIL" \
+            --midwife-password "$E2E_MIDWIFE_PASSWORD"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter ./clinic-app exec playwright install --with-deps chromium
+
+      - name: Start backend
+        run: |
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 &
+          echo $! > /tmp/backend.pid
+
+      - name: Start frontend
+        run: |
+          nohup pnpm --filter ./clinic-app dev -- --hostname 0.0.0.0 --port 3000 > /tmp/frontend.log 2>&1 &
+          echo $! > /tmp/frontend.pid
+
+      - name: Wait for services
+        run: |
+          for i in {1..60}; do
+            curl -sf http://localhost:8000/health >/dev/null && break
+            sleep 2
+          done
+          for i in {1..60}; do
+            curl -sf http://localhost:3000 >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:8000/health >/dev/null
+          curl -sf http://localhost:3000 >/dev/null
+
+      - name: Run ANC export role-matrix smoke
+        run: pnpm --filter ./clinic-app exec playwright test e2e/anc-export-role-matrix.spec.ts
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-anc-export-artifacts
+          path: |
+            clinic-app/test-results
+            /tmp/backend.log
+            /tmp/frontend.log
+          if-no-files-found: warn
+
+      - name: Stop services
+        if: always()
+        run: |
+          if [ -f /tmp/backend.pid ]; then kill $(cat /tmp/backend.pid) || true; fi
+          if [ -f /tmp/frontend.pid ]; then kill $(cat /tmp/frontend.pid) || true; fi
