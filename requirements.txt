@@ -2,6 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 python-jose[cryptography]
+PyJWT
 pydantic
 python-dotenv
 pydantic-settings
