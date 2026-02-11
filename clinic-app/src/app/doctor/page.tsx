@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ConsultationModal } from '@/app/doctor/components/consultation/ConsultationModal';
 import { LabRequestForm } from '@/app/doctor/components/lab/LabRequestForm';
 import { PrescriptionForm } from '@/app/doctor/components/prescription/PrescriptionForm';
 import { DoctorQueue } from '@/app/doctor/components/DoctorQueue';
 import { VisitDetailsModal } from '@/app/reception/components/visit/VisitDetailsModal';
+import { PurposeOfUse } from '@/shared/enums';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
 import { Tooltip } from '@/shared/Tooltip';
@@ -20,14 +21,13 @@ export default function DoctorPage() {
   const [selectedVisit, setSelectedVisit] = useState<VisitResponse | null>(null);
   const [consultationVisit, setConsultationVisit] =
     useState<VisitResponse | null>(null);
-  const [selectedConsultationId, setSelectedConsultationId] =
-    useState<string | null>(null);
-
   const [isConsultationModalOpen, setIsConsultationModalOpen] = useState(false);
   const [isLabRequestModalOpen, setIsLabRequestModalOpen] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [isVisitDetailsModalOpen, setIsVisitDetailsModalOpen] = useState(false);
   const [actionWarning, setActionWarning] = useState<string | null>(null);
+  const [allowedTransitions, setAllowedTransitions] = useState<string[]>([]);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const [activeConsultation, setActiveConsultation] = useState<{
     visitId: string;
@@ -62,6 +62,7 @@ export default function DoctorPage() {
   const [doctorFullName, setDoctorFullName] = useState<string | null>(null);
   const [activeConsultationsUpdatedAt, setActiveConsultationsUpdatedAt] =
     useState<Date | null>(null);
+  const [queueRefreshToken, setQueueRefreshToken] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -100,6 +101,37 @@ export default function DoctorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAllowedTransitions() {
+      if (!consultationVisit) {
+        if (isMounted) {
+          setAllowedTransitions([]);
+        }
+        return;
+      }
+      try {
+        const result = await visitService.getAllowedTransitions(
+          consultationVisit.id
+        );
+        if (isMounted) {
+          setAllowedTransitions(result.allowed || []);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setAllowedTransitions([]);
+        }
+      }
+    }
+
+    loadAllowedTransitions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [consultationVisit]);
+
   const getTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -116,7 +148,10 @@ export default function DoctorPage() {
     return `${diffDays}d ago`;
   };
 
-  const getLabStatusForVisit = async (visitId: string) => {
+  const maskId = (value?: string | null) =>
+    value ? `${value.substring(0, 6)}…${value.substring(value.length - 4)}` : '—';
+
+  const getLabStatusForVisit = useCallback(async (visitId: string) => {
     try {
       const requests = await doctorLabService.getLabRequestsByVisit(visitId);
       if (requests.length === 0) {
@@ -131,7 +166,7 @@ export default function DoctorPage() {
     } catch {
       return { labStatus: 'none' as const, labRequestedAt: null };
     }
-  };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -139,6 +174,9 @@ export default function DoctorPage() {
     async function loadActiveConsultations() {
       if (allVisits.length === 0) {
         setActiveConsultations([]);
+        return;
+      }
+      if (isConsultationModalOpen) {
         return;
       }
 
@@ -182,7 +220,8 @@ export default function DoctorPage() {
 
       if (
         activeConsultation &&
-        !active.find((entry) => entry.visit.id === activeConsultation.visitId)
+        !active.find((entry) => entry.visit.id === activeConsultation.visitId) &&
+        !isConsultationModalOpen
       ) {
         setActiveConsultation(null);
         setConsultationVisit(null);
@@ -193,7 +232,13 @@ export default function DoctorPage() {
     return () => {
       isMounted = false;
     };
-  }, [allVisits]);
+  }, [
+    allVisits,
+    activeConsultation,
+    consultationVisit,
+    getLabStatusForVisit,
+    isConsultationModalOpen,
+  ]);
 
   const stats = useMemo(() => {
     const today = new Date().toDateString();
@@ -211,8 +256,11 @@ export default function DoctorPage() {
     const pendingLab = allVisits.filter(
       (visit) => visit.status === 'LAB_REQUESTED'
     ).length;
+    const emergency = allVisits.filter(
+      (visit) => visit.intake_emergency_flag
+    ).length;
 
-    return { totalToday, inProgress, completedToday, pendingLab };
+    return { totalToday, inProgress, completedToday, pendingLab, emergency };
   }, [allVisits]);
 
   const completedTodayVisits = useMemo(() => {
@@ -250,7 +298,6 @@ export default function DoctorPage() {
   };
 
   const handleConsultationComplete = (consultationId: string) => {
-    setSelectedConsultationId(consultationId);
     if (!consultationVisit && selectedVisit) {
       setConsultationVisit(selectedVisit);
     }
@@ -258,6 +305,7 @@ export default function DoctorPage() {
       visitId: consultationVisit?.id || selectedVisit?.id || '',
       consultationId,
     });
+    setQueueRefreshToken((prev) => prev + 1);
   };
 
   const handleConsultationReady = async (
@@ -265,6 +313,7 @@ export default function DoctorPage() {
     consultation: ConsultationResponse
   ) => {
     setActiveConsultation({ visitId, consultationId: consultation.id });
+    setQueueRefreshToken((prev) => prev + 1);
     if (!consultationVisit || consultationVisit.id !== visitId) {
       const visitMatch = allVisits.find((visit) => visit.id === visitId);
       if (visitMatch) {
@@ -346,10 +395,13 @@ export default function DoctorPage() {
         const timeAgo = getTimeAgo(request.created_at);
         setLabResultsNotice(`Results pending (sent to lab ${timeAgo}).`);
       }
-    } catch (error: any) {
-      setLabResultsError(
-        error.response?.data?.detail || 'Unable to load lab results.'
-      );
+    } catch (error: unknown) {
+      const detail =
+        typeof error === 'object' && error && 'response' in error
+          ? (error as { response?: { data?: { detail?: string } } }).response?.data
+              ?.detail
+          : undefined;
+      setLabResultsError(detail || 'Unable to load lab results.');
     } finally {
       setLabResultsLoading(false);
       setLabResultsLoadingRequestId(null);
@@ -396,10 +448,13 @@ export default function DoctorPage() {
 
       const latestRequest = sortedRequests[0];
       await loadLabResultsForRequest(latestRequest);
-    } catch (error: any) {
-      setLabResultsError(
-        error.response?.data?.detail || 'Unable to load lab results.'
-      );
+    } catch (error: unknown) {
+      const detail =
+        typeof error === 'object' && error && 'response' in error
+          ? (error as { response?: { data?: { detail?: string } } }).response?.data
+              ?.detail
+          : undefined;
+      setLabResultsError(detail || 'Unable to load lab results.');
       setLabResultsLoading(false);
     }
   };
@@ -422,32 +477,84 @@ export default function DoctorPage() {
     setActionWarning(message);
   };
 
-  const handleLabRequestSuccess = (labRequestId: string) => {
-    console.log('Lab request created:', labRequestId);
+  const handleLabRequestSuccess = (_labRequestId: string) => {
+    void _labRequestId;
     setIsLabRequestModalOpen(false);
   };
 
-  const handlePrescriptionSuccess = (prescriptionId: string) => {
-    console.log('Prescription issued:', prescriptionId);
+  const handlePrescriptionSuccess = (_prescriptionId: string) => {
+    void _prescriptionId;
     setIsPrescriptionModalOpen(false);
+    if (consultationVisit) {
+      visitService
+        .getAllowedTransitions(consultationVisit.id)
+        .then((result) => setAllowedTransitions(result.allowed || []))
+        .catch(() => setAllowedTransitions([]));
+    }
+  };
+
+  const handleSendToPharmacy = async () => {
+    if (!consultationVisit) return;
+    try {
+      setIsTransitioning(true);
+      setActionWarning(null);
+      const updated = await visitService.transitionVisit(
+        consultationVisit.id,
+        {
+          to_status: 'PHARMACY_PENDING' as any,
+          expected_version: consultationVisit.version,
+          mode: 'normal',
+        }
+      );
+      setConsultationVisit(updated);
+      setSelectedVisit(updated);
+      setAllVisits((prev) =>
+        prev.map((visit) => (visit.id === updated.id ? updated : visit))
+      );
+      setQueueRefreshToken((prev) => prev + 1);
+      setAllowedTransitions([]);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setActionWarning(
+        typeof detail === 'string'
+          ? detail
+          : 'Unable to send visit to pharmacy. Please refresh and try again.'
+      );
+    } finally {
+      setIsTransitioning(false);
+    }
   };
 
   const getQuickActions = () => {
-    if (
-      !activeConsultation ||
-      !consultationVisit ||
-      activeConsultation.visitId !== consultationVisit.id
-    ) {
-      return null;
+    if (!consultationVisit) {
+      return (
+        <Card title="Consultation Actions" titleClassName="!text-[#0B4DA2]">
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+            Select a patient from the queue to view consultation actions and
+            start documentation.
+          </div>
+        </Card>
+      );
     }
 
-    const activeEntry = activeConsultations.find(
-      (entry) => entry.visit.id === activeConsultation.visitId
-    );
+    const hasActiveConsultation =
+      activeConsultation && activeConsultation.visitId === consultationVisit.id;
+
+    const activeEntry = hasActiveConsultation
+      ? activeConsultations.find(
+          (entry) => entry.visit.id === activeConsultation.visitId
+        )
+      : null;
     const isConsultationCompleted = Boolean(
       activeEntry?.consultation.completed_at
     );
     const labStatus = activeEntry?.labStatus ?? 'none';
+    const canStartConsultation = [
+      'IN_CONSULTATION',
+      'LAB_REQUESTED',
+      'LAB_COMPLETED',
+      'PHARMACY_PENDING',
+    ].includes(consultationVisit.status);
 
     return (
       <Card title="Consultation Actions" titleClassName="!text-[#0B4DA2]">
@@ -459,43 +566,98 @@ export default function DoctorPage() {
             </span>
             <span className="text-gray-500">
               {' '}
-              • Visit {consultationVisit.id.substring(0, 8)}...
+              • Visit {maskId(consultationVisit.id)}
             </span>
           </div>
-          {isConsultationCompleted ? (
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <Tooltip
-                content="Record is locked and read-only."
-                widthClassName="w-64"
-              >
-                <span className="inline-flex items-center rounded-full bg-[#E6F4FB] px-2 py-0.5 text-xs font-medium text-[#0B4DA2]">
-                  Consultation completed
-                </span>
-              </Tooltip>
-            </div>
+          <div className="text-xs text-gray-500">
+            {consultationVisit.patient_mrn
+              ? `MRN ${consultationVisit.patient_mrn}`
+              : `ID ${maskId(consultationVisit.patient_id)}`}
+          </div>
+          {hasActiveConsultation ? (
+            isConsultationCompleted ? (
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <Tooltip
+                  content="Record is locked and read-only."
+                  widthClassName="w-64"
+                >
+                  <span className="inline-flex items-center rounded-full bg-[#E6F4FB] px-2 py-0.5 text-xs font-medium text-[#0B4DA2]">
+                    Consultation completed
+                  </span>
+                </Tooltip>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">
+                Continue documentation or proceed to labs and prescriptions.
+              </p>
+            )
           ) : (
             <p className="text-sm text-gray-600">
-              Continue documentation or proceed to labs and prescriptions.
+              Start a consultation to unlock notes, labs, and prescriptions.
             </p>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Button
-              variant={isConsultationCompleted ? 'secondary' : 'primary'}
-              onClick={() => setIsConsultationModalOpen(true)}
-              className="w-full justify-center"
-            >
-              {isConsultationCompleted
-                ? 'View Completed Consultation'
-                : 'Continue Consultation'}
-            </Button>
-
-            {isConsultationCompleted ? (
-              <Tooltip content="Consultation is completed and locked.">
+            {!hasActiveConsultation && !canStartConsultation ? (
+              <Tooltip content="This visit is not eligible for consultation yet.">
                 <div>
                   <Button
                     variant="secondary"
-                    onClick={handleRequestLab}
+                    onClick={() => setIsConsultationModalOpen(true)}
+                    className="w-full justify-center"
+                    disabled
+                  >
+                    Start Consultation
+                  </Button>
+                </div>
+              </Tooltip>
+            ) : (
+              <Button
+                variant={
+                  hasActiveConsultation && isConsultationCompleted
+                    ? 'secondary'
+                    : 'primary'
+                }
+                onClick={() => setIsConsultationModalOpen(true)}
+                className="w-full justify-center"
+              >
+                {hasActiveConsultation
+                  ? isConsultationCompleted
+                    ? 'View Completed Consultation'
+                    : 'Continue Consultation'
+                  : 'Start Consultation'}
+              </Button>
+            )}
+
+            {hasActiveConsultation ? (
+              isConsultationCompleted ? (
+                <Tooltip content="Consultation is completed and locked.">
+                  <div>
+                    <Button
+                      variant="secondary"
+                      onClick={handleRequestLab}
+                      className="w-full justify-center"
+                      disabled
+                    >
+                      Request Lab Test
+                    </Button>
+                  </div>
+                </Tooltip>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={handleRequestLab}
+                  className="w-full justify-center"
+                >
+                  Request Lab Test
+                </Button>
+              )
+            ) : (
+              <Tooltip content="Start a consultation before ordering labs.">
+                <div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleRestrictedAction('lab')}
                     className="w-full justify-center"
                     disabled
                   >
@@ -503,22 +665,37 @@ export default function DoctorPage() {
                   </Button>
                 </div>
               </Tooltip>
-            ) : (
-              <Button
-                variant="secondary"
-                onClick={handleRequestLab}
-                className="w-full justify-center"
-              >
-                Request Lab Test
-              </Button>
             )}
 
-            {isConsultationCompleted ? (
-              <Tooltip content="Consultation is completed and locked.">
+            {hasActiveConsultation ? (
+              isConsultationCompleted ? (
+                <Tooltip content="Consultation is completed and locked.">
+                  <div>
+                    <Button
+                      variant="secondary"
+                      onClick={handleIssuePrescription}
+                      className="w-full justify-center"
+                      disabled
+                    >
+                      Issue Prescription
+                    </Button>
+                  </div>
+                </Tooltip>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={handleIssuePrescription}
+                  className="w-full justify-center"
+                >
+                  Issue Prescription
+                </Button>
+              )
+            ) : (
+              <Tooltip content="Start a consultation before issuing prescriptions.">
                 <div>
                   <Button
                     variant="secondary"
-                    onClick={handleIssuePrescription}
+                    onClick={() => handleRestrictedAction('prescription')}
                     className="w-full justify-center"
                     disabled
                   >
@@ -526,14 +703,30 @@ export default function DoctorPage() {
                   </Button>
                 </div>
               </Tooltip>
-            ) : (
+            )}
+
+            {allowedTransitions.includes('PHARMACY_PENDING') ? (
               <Button
-                variant="secondary"
-                onClick={handleIssuePrescription}
+                variant="primary"
+                onClick={handleSendToPharmacy}
                 className="w-full justify-center"
+                disabled={isTransitioning}
               >
-                Issue Prescription
+                {isTransitioning ? 'Sending...' : 'Send to Pharmacy'}
               </Button>
+            ) : (
+              <Tooltip content="Issue a prescription to send this visit to pharmacy.">
+                <div>
+                  <Button
+                    variant="secondary"
+                    className="w-full justify-center"
+                    onClick={handleSendToPharmacy}
+                    disabled
+                  >
+                    Send to Pharmacy
+                  </Button>
+                </div>
+              </Tooltip>
             )}
 
             <Button
@@ -585,6 +778,19 @@ export default function DoctorPage() {
               </span>
             </Button>
           </div>
+
+          {actionWarning && (
+            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+              {actionWarning}
+              <button
+                type="button"
+                onClick={() => setActionWarning(null)}
+                className="ml-3 text-yellow-900 underline underline-offset-2"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
         </div>
       </Card>
     );
@@ -623,11 +829,11 @@ export default function DoctorPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-10">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-10">
           <Card>
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500">
-                Today's Consultations
+                Today&apos;s Consultations
               </p>
               <div className="mt-2 text-3xl font-semibold text-[#0B4DA2]">
                 {statsLoading ? '—' : stats.totalToday}
@@ -667,6 +873,16 @@ export default function DoctorPage() {
               </div>
             </div>
           </Card>
+          <Card>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Emergency Flagged
+              </p>
+              <div className="mt-2 text-3xl font-semibold text-red-600">
+                {statsLoading ? '—' : stats.emergency}
+              </div>
+            </div>
+          </Card>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -680,11 +896,10 @@ export default function DoctorPage() {
             <DoctorQueue
               onStartConsultation={handleStartConsultation}
               onViewVisit={handleViewVisit}
-              onSelectPatient={(visit, hasConsultation) => {
-                if (hasConsultation) {
-                  handleSelectConsultationContext(visit);
-                }
+              onSelectPatient={(visit) => {
+                handleSelectConsultationContext(visit);
               }}
+              refreshToken={queueRefreshToken}
             />
           </div>
 
@@ -719,7 +934,10 @@ export default function DoctorPage() {
                             {entry.visit.patient_name || 'Unknown patient'}
                           </p>
                           <p className="text-xs text-gray-500">
-                            Visit {entry.visit.id.substring(0, 8)}... •{' '}
+                            {entry.visit.patient_mrn
+                              ? `MRN ${entry.visit.patient_mrn}`
+                              : `ID ${maskId(entry.visit.patient_id)}`}
+                            {' '}• Visit {maskId(entry.visit.id)} •{' '}
                             {getTimeAgo(entry.consultation.started_at)} in consult
                           </p>
                           {entry.consultation.completed_at && (
@@ -778,7 +996,7 @@ export default function DoctorPage() {
                   <div className="space-y-2">
                     <div className="flex items-center text-sm text-gray-600">
                       <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                      <span>Click "Start Consultation" on a patient</span>
+                      <span>Click &quot;Start Consultation&quot; on a patient</span>
                     </div>
                     <div className="flex items-center text-sm text-gray-600">
                       <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
@@ -903,6 +1121,8 @@ export default function DoctorPage() {
           visitSummary={{
             patientName: consultationVisit.patient_name,
             status: consultationVisit.status,
+            mrn: consultationVisit.patient_mrn,
+            intakeEmergencyFlag: consultationVisit.intake_emergency_flag,
           }}
           isOpen={isConsultationModalOpen}
           onClose={() => {
@@ -934,8 +1154,10 @@ export default function DoctorPage() {
                   </h2>
                   {consultationVisit && (
                     <p className="text-sm text-slate-600 mt-1">
-                      {consultationVisit.patient_name || 'Unknown patient'} •
-                      Visit {consultationVisit.id.substring(0, 12)}...
+                      {consultationVisit.patient_name || 'Unknown patient'} •{' '}
+                      {consultationVisit.patient_mrn
+                        ? `MRN ${consultationVisit.patient_mrn}`
+                        : `Visit ${maskId(consultationVisit.id)}`}
                     </p>
                   )}
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -957,10 +1179,25 @@ export default function DoctorPage() {
                       )}
                   </div>
                   {labRequestInfo && (
-                    <p className="text-xs text-slate-500 mt-2">
-                      Source: Lab request {labRequestInfo.id.substring(0, 8)}... •
-                      Status {labRequestInfo.status}
-                    </p>
+                    <div className="mt-2 space-y-1 text-xs text-slate-500">
+                      <p>
+                        Source: Lab request {labRequestInfo.id.substring(0, 8)}... •
+                        Status {labRequestInfo.status}
+                      </p>
+                      {labRequestInfo.requested_by_name && (
+                        <p>
+                          Requested by {labRequestInfo.requested_by_name}
+                          {labRequestInfo.requested_by_role
+                            ? ` · ${labRequestInfo.requested_by_role}`
+                            : ''}
+                        </p>
+                      )}
+                      {labRequestInfo.special_instructions && (
+                        <p>
+                          Instructions: {labRequestInfo.special_instructions}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
                 <button
@@ -1050,9 +1287,17 @@ export default function DoctorPage() {
                               </span>
                             </div>
                           </div>
-                          <p className="mt-1 text-xs text-slate-500">
-                            Requested {getTimeAgo(request.created_at)}
-                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                            <span>Requested {getTimeAgo(request.created_at)}</span>
+                            {request.requested_by_name && (
+                              <span>
+                                By {request.requested_by_name}
+                                {request.requested_by_role
+                                  ? ` · ${request.requested_by_role}`
+                                  : ''}
+                              </span>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
@@ -1184,6 +1429,8 @@ export default function DoctorPage() {
             setSelectedVisit(null);
           }}
           hiddenTransitions={['LAB_REQUESTED']}
+          purposeOfUse={PurposeOfUse.TREATMENT}
+          allowAdmissionRequest
         />
       )}
 

@@ -22,6 +22,9 @@ export default function LabPage() {
   });
   const [statsLoading, setStatsLoading] = useState(true);
 
+  const maskId = (value?: string | null) =>
+    value ? `${value.substring(0, 6)}…${value.substring(value.length - 4)}` : '—';
+
   useEffect(() => {
     async function loadTechnician() {
       try {
@@ -123,13 +126,6 @@ export default function LabPage() {
               <Button
                 variant="secondary"
                 className="w-full justify-center"
-                onClick={() => window.open('/api-docs', '_blank')}
-              >
-                View API Docs
-              </Button>
-              <Button
-                variant="secondary"
-                className="w-full justify-center"
                 onClick={() => window.location.reload()}
               >
                 Reload Dashboard
@@ -142,7 +138,7 @@ export default function LabPage() {
                   Technician Info
                 </h3>
                 <div className="text-sm text-gray-600">
-                  <p>ID: {technicianId.substring(0, 12)}...</p>
+                  <p>ID: {maskId(technicianId)}</p>
                   <p className="mt-1">
                     Results will be recorded under your ID
                   </p>
@@ -154,19 +150,8 @@ export default function LabPage() {
               <h3 className="text-sm font-medium text-gray-900 mb-2">
                 Recent Activity
               </h3>
-              <div className="space-y-3">
-                <div className="text-sm">
-                  <p className="font-medium">Blood Glucose test completed</p>
-                  <p className="text-gray-500">10:30 AM • Result: 5.2 mmol/L</p>
-                </div>
-                <div className="text-sm">
-                  <p className="font-medium">Lipid Profile requested</p>
-                  <p className="text-gray-500">10:15 AM • Dr. Smith</p>
-                </div>
-                <div className="text-sm">
-                  <p className="font-medium">Urinalysis in progress</p>
-                  <p className="text-gray-500">09:45 AM • Patient: John Doe</p>
-                </div>
+              <div className="text-sm text-gray-500">
+                No recent activity yet.
               </div>
             </div>
           </Card>

@@ -11,7 +11,7 @@ class LabRequestService:
         self.db = db
         self.event_service = EventService(db)
 
-    def create_request(self, visit, test_name, doctor_id):
+    def create_request(self, visit, test_name, doctor_id, special_instructions=None):
         existing = (
             self.db.query(LabRequest)
             .filter(
@@ -30,6 +30,7 @@ class LabRequestService:
             visit_id=visit.id,
             clinic_id=visit.clinic_id,
             test_name=test_name,
+            special_instructions=special_instructions,
             requested_by=doctor_id,
             status=LabRequestStatus.PENDING,
         )
@@ -49,6 +50,7 @@ class LabRequestService:
                 "lab_request_id": str(lab_request.id),
                 "visit_id": str(visit.id),
                 "test_name": lab_request.test_name,
+                "special_instructions": lab_request.special_instructions,
             },
         )
 

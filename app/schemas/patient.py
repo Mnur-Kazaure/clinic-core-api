@@ -2,7 +2,7 @@
 from uuid import UUID
 from datetime import date
 from pydantic import BaseModel, Field, ConfigDict
-from app.shared.enums import Gender
+from app.shared.enums import Gender, IdentityState, BillingReasonCode
 
 
 class PatientCreateSchema(BaseModel):
@@ -15,6 +15,10 @@ class PatientCreateSchema(BaseModel):
     phone_number: str
     address: str
     occupation: str
+    identity_state: IdentityState | None = None
+    created_reason: str | None = Field(default=None, min_length=3)
+    registration_payment_method: BillingReasonCode | None = None
+    registration_payment_reference: str | None = None
 
 
 class PatientReadSchema(BaseModel):
@@ -30,5 +34,8 @@ class PatientReadSchema(BaseModel):
     phone_number: str
     address: str
     occupation: str
+    patient_mrn: str | None = None
+    identity_state: IdentityState | None = None
+    created_reason: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

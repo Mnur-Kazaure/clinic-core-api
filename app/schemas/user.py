@@ -12,5 +12,6 @@ class DoctorListSchema(BaseModel):
     department: Optional[str] = None
     room_label: Optional[str] = None
     availability_status: Optional[str] = None
+    role: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

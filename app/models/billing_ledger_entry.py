@@ -37,6 +37,7 @@ class BillingLedgerEntry(Base):
         Enum(BillingReasonCode, name="billing_reason_code"),
         nullable=False,
     )
+    charge_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     external_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     related_entry_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     actor_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
@@ -97,8 +98,9 @@ class BillingLedgerEntry(Base):
             name="ck_billing_entry_sign",
         ),
         CheckConstraint(
+            "(entry_type IN ('PAYMENT','REFUND','REVERSAL')) OR "
             "(entry_type IN ('CHARGE','ADJUSTMENT','WRITE_OFF') AND (visit_id IS NOT NULL OR admission_id IS NOT NULL)) OR "
-            "(entry_type IN ('PAYMENT','REFUND','REVERSAL'))",
+            "(entry_type = 'CHARGE' AND reason_code = 'REGISTRATION_FEE')",
             name="ck_billing_entry_context",
         ),
         CheckConstraint(

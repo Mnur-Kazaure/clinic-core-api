@@ -9,10 +9,12 @@ from .visit_status_history import VisitStatusHistory
 from .lab_request import LabRequest
 from .lab_result import LabResult
 from .prescription import Prescription
+from .prescription_fulfillment_event import PrescriptionFulfillmentEvent
 from .dispensation import Dispensation
 from .idempotency import IdempotencyKey
 from .refresh_token import RefreshToken
 from .admission import Admission
+from .admission_request import AdmissionRequest
 from .ward import Ward
 from .bed import Bed
 from .bed_assignment import BedAssignment
@@ -29,3 +31,14 @@ from .audit_review_item import AuditReviewItem
 from .audit_review_case_history import AuditReviewCaseHistory
 from .billing_ledger_entry import BillingLedgerEntry
 from .charge_catalog import ChargeCatalog
+from .patient_mrn import PatientMRN
+from .clinic_mrn_sequence import ClinicMrnSequence
+from .visit_intake_flag import VisitIntakeFlag
+from .access_log import AccessLog
+from .event_log import EventLog
+from .pregnancy_episode import PregnancyEpisode
+from .pregnancy_previous_pregnancy import PregnancyPreviousPregnancy
+from .anc_encounter import ANCEncounter
+from .maternity_delivery_record import MaternityDeliveryRecord
+from .maternity_postnatal_note import MaternityPostnatalNote
+from .family_planning_event import FamilyPlanningEvent

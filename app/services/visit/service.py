@@ -14,7 +14,13 @@ from app.models.visit_status_history import VisitStatusHistory
 from app.services.visit.guards import guard_can_transition
 from app.core.guards.patient_guards import ensure_patient_in_clinic
 from app.core.guards.user_guards import ensure_owner_for_service_line
-from app.shared.enums import VisitStatus, AdmissionStatus, ClinicalPriorityLevel, UserRole
+from app.shared.enums import (
+    VisitStatus,
+    AdmissionStatus,
+    ClinicalPriorityLevel,
+    UserRole,
+    VisitServiceLine,
+)
 from app.services.event_service import EventService
 from app.schemas.visit import VisitCreateRequest
 
@@ -151,6 +157,141 @@ class VisitService:
             .order_by(Visit.created_at.desc())
             .first()
         )
+
+    def reassign_owner(
+        self,
+        *,
+        visit_id: UUID,
+        new_owner_id: UUID,
+        new_service_line: VisitServiceLine | None,
+        user,
+        expected_version: int,
+        reason: str | None = None,
+    ) -> Visit:
+        """
+        Reassign visit owner and optionally hand over the visit service line.
+
+        Authorization:
+        - Reception / Clinic Admin / Admin can reassign any non-terminal visit in clinic.
+        - Assigned owner can hand over to a colleague in the same service-line role.
+        - Assigned CHEW can hand over ANC -> MATERNITY to a midwife.
+        """
+        visit = (
+            self.db.query(Visit)
+            .filter(Visit.id == visit_id)
+            .with_for_update()
+            .first()
+        )
+        if not visit:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Visit not found",
+            )
+
+        if visit.clinic_id != user.clinic_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-clinic access denied",
+            )
+
+        if visit.status in {VisitStatus.COMPLETED, VisitStatus.CANCELLED}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot reassign a completed or cancelled visit",
+            )
+
+        if visit.version != expected_version:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "VERSION_CONFLICT",
+                    "current_version": visit.version,
+                },
+            )
+
+        current_service_line = visit.service_line
+        target_service_line = new_service_line or current_service_line
+
+        service_line_owner_role = {
+            VisitServiceLine.OPD: UserRole.DOCTOR,
+            VisitServiceLine.ANC: UserRole.CHEW,
+            VisitServiceLine.MATERNITY: UserRole.MIDWIFE,
+        }
+        current_owner_role = service_line_owner_role[current_service_line]
+
+        admin_roles = {
+            UserRole.RECEPTION,
+            UserRole.CLINIC_ADMIN,
+            UserRole.ADMIN,
+        }
+        is_admin = user.role in admin_roles
+        is_assigned_owner = (
+            user.role == current_owner_role
+            and visit.assigned_doctor_id == user.id
+        )
+        if not is_admin and not is_assigned_owner:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not permitted to reassign this visit",
+            )
+
+        if target_service_line != current_service_line:
+            allow_assigned_chew_handover = (
+                is_assigned_owner
+                and user.role == UserRole.CHEW
+                and current_service_line == VisitServiceLine.ANC
+                and target_service_line == VisitServiceLine.MATERNITY
+            )
+            if not is_admin and not allow_assigned_chew_handover:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not permitted to change service line",
+                )
+
+        try:
+            ensure_owner_for_service_line(
+                self.db,
+                new_owner_id,
+                user.clinic_id,
+                target_service_line,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            )
+
+        from_owner_id = visit.assigned_doctor_id
+        from_service_line = current_service_line
+        if from_owner_id == new_owner_id and from_service_line == target_service_line:
+            return visit
+
+        visit.assigned_doctor_id = new_owner_id
+        visit.service_line = target_service_line
+        visit.version = (visit.version or 0) + 1
+        self.db.add(visit)
+        self.db.commit()
+        self.db.refresh(visit)
+
+        self.event_service.emit(
+            event_type="ENTRY_AMENDED",
+            actor_id=user.id,
+            actor_role=user.role,
+            clinic_id=visit.clinic_id,
+            patient_id=visit.patient_id,
+            emitter="clinical",
+            payload={
+                "entity": "visit",
+                "action": "owner_reassigned",
+                "visit_id": str(visit.id),
+                "from_service_line": from_service_line.value,
+                "to_service_line": visit.service_line.value,
+                "from_owner_id": str(from_owner_id) if from_owner_id else None,
+                "to_owner_id": str(new_owner_id),
+                "reason": (reason or "").strip() or "workflow_handover",
+            },
+        )
+        return visit
 
 
     def transition_visit(

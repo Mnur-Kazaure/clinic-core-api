@@ -50,6 +50,10 @@ class ClinicProfileResponse(BaseModel):
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     timezone: Optional[str] = None
+    billing_currency: Optional[str] = None
+    registration_fee_minor: Optional[int] = None
+    registration_fee_required: Optional[bool] = None
+    monthly_revenue_target_minor: Optional[int] = None
     description: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -62,4 +66,13 @@ class ClinicProfileUpdateRequest(BaseModel):
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     timezone: Optional[str] = None
+    registration_fee_minor: Optional[int] = Field(default=None, ge=0)
+    registration_fee_required: Optional[bool] = None
+    monthly_revenue_target_minor: Optional[int] = Field(default=None, ge=0)
     description: Optional[str] = None
+
+
+class ClinicRegistrationFeeResponse(BaseModel):
+    registration_fee_minor: int
+    registration_fee_required: bool
+    billing_currency: str

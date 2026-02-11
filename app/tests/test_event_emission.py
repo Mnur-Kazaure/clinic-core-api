@@ -57,6 +57,7 @@ def _seed_patient_visit(db, clinic_id, doctor_id):
         assigned_doctor_id=doctor_id,
         status=VisitStatus.IN_CONSULTATION,
         started_at=datetime.now(timezone.utc),
+        version=1,
     )
     db.add(visit)
     db.commit()
@@ -82,6 +83,7 @@ def test_visit_transition_emits_event(db, clinic_id):
         visit_id=visit.id,
         to_status=VisitStatus.LAB_REQUESTED,
         user=doctor,
+        expected_version=visit.version,
     )
 
     assert (

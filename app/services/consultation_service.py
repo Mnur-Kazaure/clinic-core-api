@@ -63,6 +63,19 @@ class ConsultationService:
             },
         )
 
+        self.event_service.emit(
+            event_type="CONSULTATION_STARTED",
+            actor_id=user.id,
+            actor_role=user.role,
+            clinic_id=visit.clinic_id,
+            patient_id=visit.patient_id,
+            emitter="clinical",
+            payload={
+                "consultation_id": str(consultation.id),
+                "visit_id": str(visit.id),
+            },
+        )
+
         return consultation
 
     # ─────────────────────────────────────────

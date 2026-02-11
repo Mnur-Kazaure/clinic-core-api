@@ -7,13 +7,17 @@ import { DoctorSelection } from '@/app/reception/components/visit/DoctorSelectio
 import { visitService } from '@/domains/visit/services/visitService';
 import { PatientResponse } from '@/domains/patient/services/patientService';
 import { Doctor } from '@/domains/user/services/userService';
+import { VisitResponse } from '@/shared/types';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
+import { PurposeOfUse, VisitServiceLine, UserRole } from '@/shared/enums';
+import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 
 interface StartVisitModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (visitId: string) => void;
+  onContinueVisit?: (visitId: string) => void;
 }
 
 type VisitStep = 'SELECT_PATIENT' | 'ASSIGN_DOCTOR' | 'CONFIRM';
@@ -22,23 +26,56 @@ export function StartVisitModal({
   isOpen,
   onClose,
   onSuccess,
+  onContinueVisit,
 }: StartVisitModalProps) {
   const [step, setStep] = useState<VisitStep>('SELECT_PATIENT');
   const [selectedPatient, setSelectedPatient] =
     useState<PatientResponse | null>(null);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [serviceLine, setServiceLine] = useState<VisitServiceLine>(
+    VisitServiceLine.OPD
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRegistrationForm, setShowRegistrationForm] = useState(false);
+  const [activeVisit, setActiveVisit] = useState<VisitResponse | null>(null);
+  const [checkingActive, setCheckingActive] = useState(false);
+  const [activeVisitError, setActiveVisitError] = useState<string | null>(null);
 
-  const handlePatientSelect = (patient: PatientResponse | null) => {
+  const assignedRoleLabel =
+    serviceLine === VisitServiceLine.ANC
+      ? 'CHEW'
+      : serviceLine === VisitServiceLine.MATERNITY
+      ? 'Midwife'
+      : 'Doctor';
+
+  const handlePatientSelect = async (patient: PatientResponse | null) => {
     setSelectedPatient(patient);
-    if (patient) {
+    setActiveVisit(null);
+    setActiveVisitError(null);
+    if (!patient) {
+      setStep('SELECT_PATIENT');
+      return;
+    }
+    try {
+      setCheckingActive(true);
+      const existingVisit = await visitService.getActiveVisit(patient.id);
+      if (existingVisit) {
+        setActiveVisit(existingVisit);
+        setStep('SELECT_PATIENT');
+        setError(null);
+        return;
+      }
       setStep('ASSIGN_DOCTOR');
       setError(null);
-    } else {
-      setStep('SELECT_PATIENT');
+    } catch (err) {
+      setActiveVisitError(
+        'Unable to verify active visits. You can still proceed.'
+      );
+      setStep('ASSIGN_DOCTOR');
+    } finally {
+      setCheckingActive(false);
     }
   };
 
@@ -62,6 +99,7 @@ export function StartVisitModal({
       const visit = await visitService.startVisit({
         patient_id: selectedPatient.id,
         assigned_doctor_id: selectedDoctorId,
+        service_line: serviceLine,
       });
 
       if (onSuccess) {
@@ -95,8 +133,12 @@ export function StartVisitModal({
     setSelectedPatient(null);
     setSelectedDoctorId('');
     setSelectedDoctor(null);
+    setServiceLine(VisitServiceLine.OPD);
     setError(null);
     setShowRegistrationForm(false);
+    setActiveVisit(null);
+    setActiveVisitError(null);
+    setCheckingActive(false);
   };
 
   const handleCancel = () => {
@@ -117,6 +159,7 @@ export function StartVisitModal({
             <button
               onClick={handleCancel}
               className="text-gray-400 hover:text-gray-600"
+              aria-label="Close start visit"
             >
               ✕
             </button>
@@ -141,7 +184,7 @@ export function StartVisitModal({
                 </div>
                 <span className="ml-2 text-sm font-medium">
                   {s === 'SELECT_PATIENT' && 'Select Patient'}
-                  {s === 'ASSIGN_DOCTOR' && 'Assign Doctor'}
+                  {s === 'ASSIGN_DOCTOR' && 'Assign Staff'}
                   {s === 'CONFIRM' && 'Confirm'}
                 </span>
                 {index < 2 && (
@@ -184,7 +227,58 @@ export function StartVisitModal({
                     <PatientSearch
                       onSelectPatient={handlePatientSelect}
                       disabled={isSubmitting}
+                      purposeOfUse={PurposeOfUse.OPERATIONS}
+                      searchJustification="Start visit patient lookup"
                     />
+
+                    {checkingActive && (
+                      <div className="rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+                        Checking for active visits...
+                      </div>
+                    )}
+
+                    {activeVisitError && (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                        {activeVisitError}
+                      </div>
+                    )}
+
+                    {activeVisit && (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-amber-900">
+                              Active visit already exists for this patient
+                            </p>
+                            <p className="text-xs text-amber-700">
+                              Started {new Date(activeVisit.created_at).toLocaleString()}
+                            </p>
+                          </div>
+                          <VisitStatusBadge status={activeVisit.status} size="sm" />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            onClick={() => {
+                              if (onContinueVisit) {
+                                onContinueVisit(activeVisit.id);
+                              }
+                              handleCancel();
+                            }}
+                          >
+                            Continue Visit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => handlePatientSelect(null)}
+                          >
+                            Choose Different Patient
+                          </Button>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="border-t pt-4">
                       <div className="text-center">
@@ -219,9 +313,14 @@ export function StartVisitModal({
                   onClick={() => {
                     if (selectedPatient) setStep('ASSIGN_DOCTOR');
                   }}
-                  disabled={!selectedPatient || isSubmitting}
+                  disabled={
+                    !selectedPatient ||
+                    isSubmitting ||
+                    checkingActive ||
+                    Boolean(activeVisit)
+                  }
                 >
-                  Next: Assign Doctor
+                  Next: Assign Staff
                 </Button>
               </div>
             </div>
@@ -229,7 +328,7 @@ export function StartVisitModal({
 
           {step === 'ASSIGN_DOCTOR' && (
             <div className="space-y-6">
-              <Card title="2. Assign Doctor" titleClassName="text-[#0B4DA2]">
+              <Card title="2. Assign Staff" titleClassName="text-[#0B4DA2]">
                 <div className="space-y-6">
                   {selectedPatient && (
                     <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
@@ -238,7 +337,7 @@ export function StartVisitModal({
                           Selected Patient
                         </p>
                         <span className="text-xs text-slate-500">
-                          Verified
+                          Selected
                         </span>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -278,11 +377,47 @@ export function StartVisitModal({
                     </div>
                   )}
 
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Service Line
+                    </label>
+                    <select
+                      value={serviceLine}
+                      onChange={(e) => {
+                        setServiceLine(e.target.value as VisitServiceLine);
+                        setSelectedDoctorId('');
+                        setSelectedDoctor(null);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={VisitServiceLine.OPD}>Consultation (OPD)</option>
+                      <option value={VisitServiceLine.ANC}>ANC</option>
+                      <option value={VisitServiceLine.MATERNITY}>Maternity</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Choose where this visit should be routed.
+                    </p>
+                  </div>
+
                   <DoctorSelection
                     value={selectedDoctorId}
                     onChange={handleDoctorSelect}
                     onSelectDoctor={setSelectedDoctor}
                     disabled={isSubmitting}
+                    role={
+                      serviceLine === VisitServiceLine.ANC
+                        ? UserRole.CHEW
+                        : serviceLine === VisitServiceLine.MATERNITY
+                        ? UserRole.MIDWIFE
+                        : UserRole.DOCTOR
+                    }
+                    label={
+                      serviceLine === VisitServiceLine.ANC
+                        ? 'Assign CHEW *'
+                        : serviceLine === VisitServiceLine.MATERNITY
+                        ? 'Assign Midwife *'
+                        : 'Assign Doctor *'
+                    }
                   />
                 </div>
               </Card>
@@ -364,11 +499,17 @@ export function StartVisitModal({
 
                   <div className="rounded-md border border-slate-200 bg-white p-4">
                     <h3 className="text-sm font-semibold text-slate-900 mb-3">
-                      Assigned Doctor
+                      Assigned {assignedRoleLabel}
                     </h3>
                       <div className="flex items-center">
                         <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                          <span className="text-blue-700 font-semibold">DR</span>
+                          <span className="text-blue-700 font-semibold">
+                            {serviceLine === VisitServiceLine.OPD
+                              ? 'DR'
+                              : serviceLine === VisitServiceLine.ANC
+                              ? 'CH'
+                              : 'MW'}
+                          </span>
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-slate-900">

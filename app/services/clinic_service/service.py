@@ -69,6 +69,8 @@ class ClinicService:
             UserRole.DOCTOR,
             UserRole.LAB,
             UserRole.PHARMACY,
+            UserRole.CHEW,
+            UserRole.MIDWIFE,
         }:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -222,6 +224,18 @@ class ClinicService:
             clinic.timezone = payload.timezone
         if payload.description is not None:
             clinic.description = payload.description
+        if payload.registration_fee_required is not None:
+            clinic.registration_fee_required = payload.registration_fee_required
+        if payload.registration_fee_minor is not None:
+            clinic.registration_fee_minor = payload.registration_fee_minor
+        if payload.monthly_revenue_target_minor is not None:
+            clinic.monthly_revenue_target_minor = payload.monthly_revenue_target_minor
+
+        if clinic.registration_fee_required and clinic.registration_fee_minor <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Registration fee is required and must be greater than 0",
+            )
 
         self.db.commit()
         self.db.refresh(clinic)

@@ -1,5 +1,5 @@
 import client from '@/api/client';
-import { PrescriptionStatus } from '@/shared/enums';
+import { PrescriptionFulfillmentType, PrescriptionStatus } from '@/shared/enums';
 import { PrescriptionResponse } from '@/shared/types';
 
 export interface DispenseCreateRequest {
@@ -12,6 +12,21 @@ export interface DispenseResponse {
   prescription_id: string;
   pharmacist_id: string;
   quantity: number;
+}
+
+export interface ExternalFulfillCreateRequest {
+  note: string;
+}
+
+export interface PrescriptionFulfillmentResponse {
+  id: string;
+  clinic_id: string;
+  prescription_id: string;
+  actor_id: string;
+  fulfillment_type: PrescriptionFulfillmentType;
+  quantity: number | null;
+  note: string | null;
+  occurred_at: string;
 }
 
 export const pharmacyService = {
@@ -38,6 +53,17 @@ export const pharmacyService = {
   ): Promise<DispenseResponse> {
     const response = await client.post(
       `/v1/pharmacy/prescriptions/${prescriptionId}/dispense`,
+      payload
+    );
+    return response.data;
+  },
+
+  async fulfillPrescriptionExternal(
+    prescriptionId: string,
+    payload: ExternalFulfillCreateRequest
+  ): Promise<PrescriptionFulfillmentResponse> {
+    const response = await client.post(
+      `/v1/pharmacy/prescriptions/${prescriptionId}/fulfill-external`,
       payload
     );
     return response.data;

@@ -13,7 +13,7 @@ import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
 
 interface PatientRegistrationFormProps {
-  onSuccess?: (patientId: string) => void;
+  onSuccess?: (mrn?: string | null, patientName?: string | null) => void;
   onCancel?: () => void;
   compact?: boolean;
 }
@@ -26,12 +26,17 @@ export function PatientRegistrationForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [issuedMrn, setIssuedMrn] = useState<string | null>(null);
+  const [isProvisional, setIsProvisional] = useState(false);
+  const [provisionalReason, setProvisionalReason] = useState('');
 
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
+    setValue,
+    getValues,
   } = useForm<PatientCreateFormData>({
     resolver: zodResolver(patientCreateSchema),
     defaultValues: {
@@ -44,26 +49,63 @@ export function PatientRegistrationForm({
       setIsSubmitting(true);
       setSubmitError(null);
 
-      const patient = await patientService.createPatient(data);
+      const payload = { ...data };
+      if (isProvisional) {
+        const trimmedReason = provisionalReason.trim();
+        if (trimmedReason.length < 3) {
+          setSubmitError('Reason for provisional registration is required.');
+          return;
+        }
+        if (!payload.address.trim()) {
+          payload.address = 'Unknown';
+        }
+        if (!payload.occupation.trim()) {
+          payload.occupation = 'Unknown';
+        }
+        payload.identity_state = 'PROVISIONAL';
+        payload.created_reason = trimmedReason;
+      }
+
+      const patient = await patientService.createPatient(payload);
 
       setSubmitSuccess(true);
+      setIssuedMrn(patient.patient_mrn ?? null);
       reset();
+      setIsProvisional(false);
+      setProvisionalReason('');
 
       if (onSuccess) {
-        onSuccess(patient.id);
+        onSuccess(patient.patient_mrn ?? null, patient.full_name ?? null);
       }
 
       setTimeout(() => {
         setSubmitSuccess(false);
-      }, 3000);
-    } catch (error: any) {
+        setIssuedMrn(null);
+      }, 12000);
+    } catch (error: unknown) {
       console.error('Patient registration failed:', error);
-      setSubmitError(
-        error.response?.data?.detail ||
-          'Failed to register patient. Please try again.'
-      );
+      const detail =
+        typeof error === 'object' && error && 'response' in error
+          ? (error as { response?: { data?: { detail?: string } } }).response?.data
+              ?.detail
+          : undefined;
+      setSubmitError(detail || 'Failed to register patient. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleProvisionalToggle = (checked: boolean) => {
+    setIsProvisional(checked);
+    if (checked) {
+      const address = getValues('address');
+      const occupation = getValues('occupation');
+      if (!address?.trim()) {
+        setValue('address', 'Unknown', { shouldValidate: true });
+      }
+      if (!occupation?.trim()) {
+        setValue('occupation', 'Unknown', { shouldValidate: true });
+      }
     }
   };
 
@@ -87,25 +129,78 @@ export function PatientRegistrationForm({
               </p>
             </div>
           )}
-          {submitError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-600">{submitError}</p>
+        {submitError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-600">{submitError}</p>
+          </div>
+        )}
+        {submitSuccess && (
+          <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+            <p className="text-sm text-green-600">
+              ✅ Patient registered successfully!
+            </p>
+            {issuedMrn && (
+              <p className="text-xs text-green-700 mt-1">MRN: {issuedMrn}</p>
+            )}
+          </div>
+        )}
+
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <label className="inline-flex items-center">
+            <input
+              type="checkbox"
+              checked={isProvisional}
+              onChange={(e) => handleProvisionalToggle(e.target.checked)}
+              className="h-4 w-4 text-blue-600"
+            />
+            <span className="ml-2 text-sm text-slate-700">
+              Provisional registration (unknown details)
+            </span>
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
+            Use when address/occupation are unknown. You can update later.
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Phone number is still required for follow-up.
+          </p>
+          {isProvisional && (
+            <div className="mt-3 space-y-3">
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Reason for provisional registration
+              </label>
+              <input
+                type="text"
+                value={provisionalReason}
+                onChange={(e) => setProvisionalReason(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., Unconscious arrival"
+              />
+              <div className="flex flex-wrap gap-2">
+                {[
+                  'Unconscious arrival',
+                  'No ID available',
+                  'Child without guardian',
+                  'Emergency admission',
+                ].map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setProvisionalReason(reason)}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
+        </div>
 
-          {submitSuccess && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-              <p className="text-sm text-green-600">
-                ✅ Patient registered successfully!
-              </p>
-            </div>
-          )}
-
-          <Input
-            label="Full Name *"
-            {...register('full_name')}
-            error={errors.full_name?.message}
-            placeholder="John Doe"
+        <Input
+          label="Full Name *"
+          {...register('full_name')}
+          error={errors.full_name?.message}
+          placeholder="John Doe"
           />
 
           <Input
@@ -137,6 +232,15 @@ export function PatientRegistrationForm({
                   className="h-4 w-4 text-blue-600"
                 />
                 <span className="ml-2 text-gray-700">Female</span>
+              </label>
+              <label className="inline-flex items-center">
+                <input
+                  type="radio"
+                  value="UNKNOWN"
+                  {...register('gender')}
+                  className="h-4 w-4 text-blue-600"
+                />
+                <span className="ml-2 text-gray-700">Unknown</span>
               </label>
             </div>
             {errors.gender && (
@@ -228,8 +332,64 @@ export function PatientRegistrationForm({
               <p className="text-green-600 text-sm mt-1">
                 You can now start a visit for this patient.
               </p>
+              {issuedMrn && (
+                <p className="text-green-700 text-sm mt-2">
+                  MRN: {issuedMrn}
+                </p>
+              )}
             </div>
           )}
+
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+            <label className="inline-flex items-center">
+              <input
+                type="checkbox"
+                checked={isProvisional}
+                onChange={(e) => handleProvisionalToggle(e.target.checked)}
+                className="h-4 w-4 text-blue-600"
+              />
+              <span className="ml-2 text-sm text-slate-700">
+                Provisional registration (unknown details)
+              </span>
+            </label>
+            <p className="mt-1 text-xs text-slate-500">
+              Use when address/occupation are unknown. You can update later.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Phone number is still required for follow-up.
+            </p>
+            {isProvisional && (
+              <div className="mt-3 space-y-3">
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Reason for provisional registration
+                </label>
+                <input
+                  type="text"
+                  value={provisionalReason}
+                  onChange={(e) => setProvisionalReason(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Unconscious arrival"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'Unconscious arrival',
+                    'No ID available',
+                    'Child without guardian',
+                    'Emergency admission',
+                  ].map((reason) => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => setProvisionalReason(reason)}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
@@ -268,6 +428,15 @@ export function PatientRegistrationForm({
                     className="h-4 w-4 text-blue-600"
                   />
                   <span className="ml-2 text-gray-700">Female</span>
+                </label>
+                <label className="inline-flex items-center">
+                  <input
+                    type="radio"
+                    value="UNKNOWN"
+                    {...register('gender')}
+                    className="h-4 w-4 text-blue-600"
+                  />
+                  <span className="ml-2 text-gray-700">Unknown</span>
                 </label>
               </div>
               {errors.gender && (

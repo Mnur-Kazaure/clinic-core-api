@@ -1,7 +1,7 @@
 # app/models/visit_status_history.py
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Enum, ForeignKey, DateTime
+from sqlalchemy import Enum, ForeignKey, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -35,6 +35,35 @@ class VisitStatusHistory(Base):
     changed_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"),
         nullable=False,
+    )
+
+    # manual | auto | override | reopen (stored as text for portability)
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="manual",
+    )
+
+    # Optional override context
+    reason_code: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    reason_text: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    pending_labs_count_snapshot: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    unfulfilled_prescriptions_count_snapshot: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

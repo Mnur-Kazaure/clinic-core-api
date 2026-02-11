@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { pharmacyService } from '@/domains/pharmacy/services/pharmacyService';
 import { PrescriptionResponse } from '@/shared/types';
-import { PrescriptionStatus } from '@/shared/enums';
+import {
+  PrescriptionFulfillmentType,
+  PrescriptionStatus,
+} from '@/shared/enums';
 import { Card } from '@/shared/Card';
 import { Button } from '@/shared/Button';
 
@@ -22,8 +25,15 @@ export function PrescriptionDetailsModal({
   onDispense,
   onRefresh,
 }: PrescriptionDetailsModalProps) {
-  if (!isOpen || !prescription) return null;
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  if (!isOpen || !prescription) return null;
+
+  const maskId = (value?: string | null) =>
+    value ? `${value.slice(0, 8)}...` : '—';
+
+  const patientLabel = prescription.patient_mrn
+    ? `MRN ${prescription.patient_mrn}`
+    : `ID ${maskId(prescription.patient_id)}`;
 
   const handleRefresh = async () => {
     try {
@@ -52,6 +62,9 @@ export function PrescriptionDetailsModal({
               <h2 className="text-2xl font-bold text-gray-900">
                 Prescription: {prescription.drug_name}
               </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {prescription.patient_name || 'Unknown patient'} • {patientLabel}
+              </p>
               <div className="flex items-center space-x-4 mt-2">
                 <span
                   className={`px-3 py-1 rounded-full text-sm font-medium ${statusBadge}`}
@@ -59,7 +72,7 @@ export function PrescriptionDetailsModal({
                   {prescription.status}
                 </span>
                 <span className="text-sm text-gray-500">
-                  ID: {prescription.id.substring(0, 12)}...
+                  ID: {maskId(prescription.id)}
                 </span>
               </div>
             </div>
@@ -106,23 +119,53 @@ export function PrescriptionDetailsModal({
                 <div>
                   <dt className="text-gray-500">Visit ID</dt>
                   <dd className="text-gray-900">
-                    {prescription.visit_id.substring(0, 12)}...
+                    {maskId(prescription.visit_id)}
                   </dd>
                 </div>
+                {prescription.status === PrescriptionStatus.DISPENSED &&
+                  prescription.fulfillment_type && (
+                    <div>
+                      <dt className="text-gray-500">Fulfillment</dt>
+                      <dd className="text-gray-900">
+                        {prescription.fulfillment_type ===
+                        PrescriptionFulfillmentType.DISPENSED_EXTERNAL
+                          ? 'External'
+                          : 'In-house'}
+                      </dd>
+                    </div>
+                  )}
                 <div>
                   <dt className="text-gray-500">Prescribed By</dt>
                   <dd className="text-gray-900">
-                    {prescription.prescribed_by.substring(0, 12)}...
+                    {prescription.prescribed_by_name ||
+                      maskId(prescription.prescribed_by)}
+                    {prescription.prescribed_by_role
+                      ? ` • ${prescription.prescribed_by_role}`
+                      : ''}
                   </dd>
                 </div>
                 {prescription.dispensed_by && (
                   <div>
                     <dt className="text-gray-500">Dispensed By</dt>
                     <dd className="text-gray-900">
-                      {prescription.dispensed_by.substring(0, 12)}...
+                      {prescription.dispensed_by_name ||
+                        maskId(prescription.dispensed_by)}
+                      {prescription.dispensed_by_role
+                        ? ` • ${prescription.dispensed_by_role}`
+                        : ''}
                     </dd>
                   </div>
                 )}
+                {prescription.fulfillment_type ===
+                  PrescriptionFulfillmentType.DISPENSED_EXTERNAL &&
+                  prescription.fulfillment_note && (
+                    <div>
+                      <dt className="text-gray-500">External Note</dt>
+                      <dd className="text-gray-900">
+                        {prescription.fulfillment_note}
+                      </dd>
+                    </div>
+                  )}
               </dl>
             </Card>
           </div>

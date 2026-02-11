@@ -1,16 +1,42 @@
+// clinic-app/src/app/admin/page.tsx
+
 'use client';
 
+import Link from 'next/link';
 import { ClinicProfileForm } from './components/ClinicProfileForm';
+import { AdminQuickActions } from './components/AdminQuickActions';
 import { StaffDirectory } from './components/StaffDirectory';
+import { ClinicSettingsForm } from './components/ClinicSettingsForm';
+import { Card } from '@/shared/Card';
+import { PaymentOversightCard } from './components/PaymentOversightCard';
+
+const statCards = [
+  {
+    title: "Today's Revenue",
+    description: 'Awaiting payment feed',
+  },
+  {
+    title: 'New Patients',
+    description: 'Awaiting registration metrics',
+  },
+  {
+    title: 'Active Staff',
+    description: 'Awaiting staff activity feed',
+  },
+  {
+    title: 'System Health',
+    description: 'Awaiting health snapshot',
+  },
+];
 
 export default function AdminPage() {
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <section
         id="overview"
-        className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm"
+        className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
       >
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
               Clinic Governance
@@ -19,47 +45,41 @@ export default function AdminPage() {
               Clinic Admin Dashboard
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Manage clinic profile, staff credentials, and operational
-              readiness with audit-grade precision.
+              Operational visibility, staff oversight, and compliance signals in one view.
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-            <p className="font-medium text-slate-900">Today’s focus</p>
-            <ul className="mt-2 space-y-1">
-              <li>Verify doctor availability and room assignments.</li>
-              <li>Audit staff roles before morning shift.</li>
-              <li>Keep clinic profile accurate for compliance.</li>
-            </ul>
-          </div>
+          <Link
+            href="/admin/settings"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-300 hover:text-slate-900"
+          >
+            Open Settings
+          </Link>
         </div>
       </section>
 
-      <section id="clinic-profile" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          <ClinicProfileForm />
-        </div>
-        <div className="lg:col-span-1 space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Governance Notes
-            </h2>
-            <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>Ensure all staff have correct roles before shifts.</li>
-              <li>Doctor profiles should include specialty, department, room.</li>
-              <li>Disabling a staff account blocks access immediately.</li>
-            </ul>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-900 p-5 text-sm text-slate-100 shadow-sm">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {statCards.map((stat) => (
+          <Card key={stat.title}>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-              Compliance
+              {stat.title}
             </p>
-            <p className="mt-2 font-semibold">Identity authority</p>
-            <p className="mt-2 text-slate-300">
-              Clinic profile and staff credentials are authoritative records.
-              Keep them up to date for audit readiness.
-            </p>
-          </div>
-        </div>
+            <div className="mt-3 text-2xl font-semibold text-slate-900">—</div>
+            <p className="mt-2 text-xs text-slate-500">{stat.description}</p>
+          </Card>
+        ))}
+      </section>
+
+      <section id="quick-actions">
+        <AdminQuickActions />
+      </section>
+
+      <section id="payment-oversight">
+        <PaymentOversightCard />
+      </section>
+
+      <section id="clinic-profile" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ClinicProfileForm />
+        <ClinicSettingsForm />
       </section>
 
       <section id="staff-directory">

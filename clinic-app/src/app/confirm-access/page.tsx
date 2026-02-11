@@ -51,6 +51,8 @@ export default function ConfirmAccessPage() {
           DOCTOR: 'Doctor',
           LAB: 'Lab',
           PHARMACY: 'Pharmacy',
+          CHEW: 'ANC (CHEW)',
+          MIDWIFE: 'Maternity (Midwife)',
           ADMIN: 'Admin',
           CLINIC_ADMIN: 'Clinic Admin',
           SYSTEM: 'System',

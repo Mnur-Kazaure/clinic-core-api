@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { pharmacyService } from '@/domains/pharmacy/services/pharmacyService';
 import { PrescriptionResponse } from '@/shared/types';
-import { PrescriptionStatus } from '@/shared/enums';
+import { PrescriptionFulfillmentType, PrescriptionStatus } from '@/shared/enums';
 import { Card } from '@/shared/Card';
 import { Button } from '@/shared/Button';
 
@@ -28,6 +28,16 @@ export function PharmacyQueue({
   const [statusFilter, setStatusFilter] =
     useState<PrescriptionFilter>(PrescriptionStatus.ISSUED);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const maskId = (value?: string | null) =>
+    value ? `${value.slice(0, 8)}...` : '—';
+
+  const getPatientDisplay = (prescription: PrescriptionResponse) => {
+    if (prescription.patient_mrn) {
+      return `MRN ${prescription.patient_mrn}`;
+    }
+    return `ID: ${maskId(prescription.patient_id)}`;
+  };
 
   const loadPrescriptions = async () => {
     try {
@@ -75,7 +85,8 @@ export function PharmacyQueue({
     return `${diffDays}d ago`;
   };
 
-  const getStatusBadge = (status: PrescriptionStatus) => {
+  const getStatusBadge = (prescription: PrescriptionResponse) => {
+    const status = prescription.status;
     const config =
       {
         ISSUED: { color: 'bg-yellow-100 text-yellow-800', label: 'Issued' },
@@ -83,11 +94,18 @@ export function PharmacyQueue({
         CANCELLED: { color: 'bg-red-100 text-red-800', label: 'Cancelled' },
       }[status] || { color: 'bg-gray-100 text-gray-800', label: status };
 
+    const label =
+      status === PrescriptionStatus.DISPENSED &&
+      prescription.fulfillment_type ===
+        PrescriptionFulfillmentType.DISPENSED_EXTERNAL
+        ? 'Dispensed (External)'
+        : config.label;
+
     return (
       <span
         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.color}`}
       >
-        {config.label}
+        {label}
       </span>
     );
   };
@@ -197,10 +215,29 @@ export function PharmacyQueue({
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
-                      {getStatusBadge(prescription.status)}
+                      {getStatusBadge(prescription)}
                       <span className="text-sm font-medium text-gray-900">
                         {prescription.drug_name}
                       </span>
+                    </div>
+
+                    <div className="text-sm text-gray-700">
+                      <span className="font-medium">
+                        {prescription.patient_name || 'Unknown patient'}
+                      </span>
+                      <span className="text-gray-500">
+                        {' '}
+                        • {getPatientDisplay(prescription)}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-gray-500 mt-1">
+                      Prescribed by{' '}
+                      {prescription.prescribed_by_name ||
+                        maskId(prescription.prescribed_by)}
+                      {prescription.prescribed_by_role
+                        ? ` • ${prescription.prescribed_by_role}`
+                        : ''}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -225,7 +262,10 @@ export function PharmacyQueue({
                     </div>
 
                     <div className="mt-3 flex items-center text-xs text-gray-500">
-                      <span>Prescription ID: {prescription.id.substring(0, 8)}...</span>
+                      <span>
+                        Prescription: {maskId(prescription.id)} • Visit:{' '}
+                        {maskId(prescription.visit_id)}
+                      </span>
                     </div>
                   </div>
 

@@ -12,14 +12,98 @@ from app.core.guards.lab_guards import (
 )
 from app.models.lab_request import LabRequest
 from app.models.lab_result import LabResult
+from app.models.patient import Patient
+from app.models.patient_mrn import PatientMRN
+from app.models.patient_identity_map import PatientIdentityMap
+from app.models.identity_map_revocation import IdentityMapRevocation
+from app.models.user import User
 from app.models.visit import Visit
 from app.schemas.lab import LabResultCreate, LabResultResponse
 from app.schemas.lab_request import LabRequestResponse
 from app.services.lab_service import LabService
-from app.shared.enums import LabRequestStatus, PurposeOfUse
+from app.shared.enums import LabRequestStatus, PurposeOfUse, MRNStatus
 from app.services.access_log_service import AccessLogService
 
 router = APIRouter(prefix="/lab", tags=["Lab"])
+
+
+def _resolve_canonical_patient_id(db, *, clinic_id: UUID, patient_id: UUID) -> UUID:
+    visited = set()
+    current = patient_id
+    for _ in range(10):
+        if current in visited:
+            return patient_id
+        visited.add(current)
+        mapping = (
+            db.query(PatientIdentityMap)
+            .filter(
+                PatientIdentityMap.clinic_id == clinic_id,
+                PatientIdentityMap.from_patient_id == current,
+            )
+            .first()
+        )
+        if not mapping:
+            return current
+        revoked = (
+            db.query(IdentityMapRevocation)
+            .filter(
+                IdentityMapRevocation.clinic_id == clinic_id,
+                IdentityMapRevocation.map_id == mapping.id,
+            )
+            .first()
+        )
+        if revoked:
+            return current
+        current = mapping.to_patient_id
+    return patient_id
+
+
+def _attach_patient_info(db, *, clinic_id: UUID, lab_requests: list[LabRequest]) -> None:
+    if not lab_requests:
+        return
+    visit_ids = {request.visit_id for request in lab_requests}
+    visits = db.query(Visit).filter(Visit.id.in_(visit_ids)).all()
+    visit_map = {visit.id: visit for visit in visits}
+    patient_ids = {visit.patient_id for visit in visits}
+    patients = db.query(Patient).filter(Patient.id.in_(patient_ids)).all()
+    patient_map = {patient.id: patient.full_name for patient in patients}
+    canonical_map = {
+        patient_id: _resolve_canonical_patient_id(
+            db, clinic_id=clinic_id, patient_id=patient_id
+        )
+        for patient_id in patient_ids
+    }
+    canonical_ids = set(canonical_map.values())
+    mrns = (
+        db.query(PatientMRN.patient_id, PatientMRN.mrn)
+        .filter(
+            PatientMRN.patient_id.in_(canonical_ids),
+            PatientMRN.clinic_id == clinic_id,
+            PatientMRN.status == MRNStatus.ACTIVE,
+        )
+        .all()
+    )
+    mrn_map = {patient_id: mrn for patient_id, mrn in mrns}
+    requester_ids = {request.requested_by for request in lab_requests}
+    users = db.query(User).filter(User.id.in_(requester_ids)).all()
+    user_map = {user.id: user for user in users}
+
+    for request in lab_requests:
+        visit = visit_map.get(request.visit_id)
+        if not visit:
+            request.patient_id = None
+            request.patient_name = None
+            request.patient_mrn = None
+            request.requested_by_name = None
+            request.requested_by_role = None
+            continue
+        request.patient_id = visit.patient_id
+        request.patient_name = patient_map.get(visit.patient_id)
+        canonical_id = canonical_map.get(visit.patient_id, visit.patient_id)
+        request.patient_mrn = mrn_map.get(canonical_id)
+        requester = user_map.get(request.requested_by)
+        request.requested_by_name = requester.full_name if requester else None
+        request.requested_by_role = requester.role if requester else None
 
 
 @router.get(
@@ -41,7 +125,13 @@ def list_lab_requests(
     if status is not None:
         q = q.filter(LabRequest.status == status)
 
-    return q.order_by(LabRequest.created_at.desc()).all()
+    lab_requests = q.order_by(LabRequest.created_at.desc()).all()
+    _attach_patient_info(
+        db,
+        clinic_id=current_user.clinic_id,
+        lab_requests=lab_requests,
+    )
+    return lab_requests
 
 
 @router.get(

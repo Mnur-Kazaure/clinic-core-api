@@ -2,7 +2,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.shared.enums import BillingEntryType, BillingReasonCode
 
@@ -19,6 +19,20 @@ class BillingPaymentCreateRequest(BaseModel):
     description: str = Field(min_length=3)
     reason_code: BillingReasonCode
     external_ref: str | None = None
+
+    @model_validator(mode="after")
+    def validate_manual_payment(self):
+        if self.reason_code not in {
+            BillingReasonCode.CASH,
+            BillingReasonCode.TRANSFER,
+        }:
+            raise ValueError("Only CASH or TRANSFER payment methods are supported")
+        if (
+            self.reason_code == BillingReasonCode.TRANSFER
+            and (self.external_ref is None or len(self.external_ref.strip()) < 3)
+        ):
+            raise ValueError("Transfer reference is required for bank transfers")
+        return self
 
 
 class BillingReversalRequest(BaseModel):

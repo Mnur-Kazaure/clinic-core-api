@@ -7,7 +7,7 @@ from sqlalchemy import Enum, ForeignKey, DateTime, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.shared.enums import VisitStatus
+from app.shared.enums import VisitStatus, VisitServiceLine
 
 
 class Visit(Base):
@@ -39,6 +39,13 @@ class Visit(Base):
         nullable=False,
     )
 
+    service_line: Mapped[VisitServiceLine] = mapped_column(
+        Enum(VisitServiceLine, name="visit_service_line"),
+        nullable=False,
+        default=VisitServiceLine.OPD,
+        server_default=VisitServiceLine.OPD.value,
+    )
+
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -48,6 +55,13 @@ class Visit(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    # Optimistic concurrency token for state transitions.
+    version: Mapped[int] = mapped_column(
+        nullable=False,
+        default=1,
+        server_default="1",
     )
 
     __table_args__ = (

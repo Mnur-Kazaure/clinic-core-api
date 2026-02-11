@@ -89,6 +89,9 @@ export function LabRequestQueue({
     );
   };
 
+  const maskId = (value?: string | null) =>
+    value ? `${value.substring(0, 6)}…${value.substring(value.length - 4)}` : '—';
+
   if (loading && requests.length === 0) {
     return (
       <Card title="Lab Requests" titleClassName="text-[#0B4DA2]">
@@ -187,52 +190,70 @@ export function LabRequestQueue({
                 }`}
                 onClick={() => onSelectRequest && onSelectRequest(request)}
               >
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
+                    <div className="flex items-center gap-3">
                       {getStatusBadge(request.status)}
-                      <span className="text-sm font-medium text-gray-900">
-                        {request.test_name}
+                      <span className="text-xs text-gray-500">
+                        {getTimeAgo(request.created_at)}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-600">Visit ID:</span>
-                        <p className="font-medium text-gray-900">
-                          {request.visit_id.substring(0, 8)}...
+                    <div className="mt-2">
+                      <p className="text-base font-semibold text-gray-900">
+                        {request.patient_name || 'Unknown patient'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {request.patient_mrn
+                          ? `MRN ${request.patient_mrn}`
+                          : `ID: ${maskId(request.patient_id)}`}
+                      </p>
+                    </div>
+
+                    <div className="mt-3">
+                      <p className="text-sm font-medium text-gray-900">
+                        {request.test_name}
+                      </p>
+                      {request.special_instructions && (
+                        <p className="mt-1 text-xs text-gray-600">
+                          <span className="font-medium text-gray-700">
+                            Instructions:
+                          </span>{' '}
+                          {request.special_instructions.length > 90
+                            ? `${request.special_instructions.slice(0, 90)}…`
+                            : request.special_instructions}
                         </p>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Requested by:</span>
-                        <p className="font-medium text-gray-900">
-                          {request.requested_by.substring(0, 8)}...
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Created:</span>
-                        <p className="font-medium text-gray-900">
-                          {getTimeAgo(request.created_at)}
-                        </p>
-                      </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-gray-500">
+                      <span>
+                        Requested by:{' '}
+                        {request.requested_by_name
+                          ? request.requested_by_name
+                          : maskId(request.requested_by)}
+                        {request.requested_by_role
+                          ? ` · ${request.requested_by_role}`
+                          : ''}
+                      </span>
+                      <span>
+                        Visit: {maskId(request.visit_id)}
+                      </span>
+                      <span>
+                        Request: {maskId(request.id)}
+                      </span>
                     </div>
 
                     {request.completed_at && (
                       <div className="mt-2 text-xs text-gray-500">
-                        <span>
-                          Completed:{' '}
-                          {new Date(request.completed_at).toLocaleDateString()}
-                        </span>
+                        Completed{' '}
+                        {new Date(request.completed_at).toLocaleDateString()}
                       </div>
                     )}
-
-                    <div className="mt-3 flex items-center text-xs text-gray-500">
-                      <span>Request ID: {request.id.substring(0, 8)}...</span>
-                    </div>
                   </div>
 
                   {onSelectRequest && request.status === 'PENDING' && (
-                    <div className="ml-4">
+                    <div className="shrink-0">
                       <Button
                         size="sm"
                         variant="primary"

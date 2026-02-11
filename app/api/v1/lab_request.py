@@ -37,6 +37,7 @@ def create_lab_request(
     lab_request = service.create_request(
         visit=visit,
         test_name=payload.test_name,
+        special_instructions=payload.special_instructions,
         doctor_id=user.id,
     )
     if visit.status == VisitStatus.IN_CONSULTATION:
@@ -44,5 +45,6 @@ def create_lab_request(
             visit_id=visit.id,
             to_status=VisitStatus.LAB_REQUESTED,
             user=user,
+            expected_version=visit.version,
         )
     return lab_request

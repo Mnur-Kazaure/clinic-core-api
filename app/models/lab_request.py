@@ -1,5 +1,5 @@
 # app/models/lab_request.py
-from sqlalchemy import String, ForeignKey, Enum, DateTime
+from sqlalchemy import String, ForeignKey, Enum, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 import uuid
@@ -30,6 +30,7 @@ class LabRequest(Base):
     )
 
     test_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    special_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[LabRequestStatus] = mapped_column(
         Enum(LabRequestStatus, name="lab_request_status"),

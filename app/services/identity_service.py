@@ -12,7 +12,9 @@ from app.models.identity_evidence import IdentityEvidence
 from app.models.identity_approval import IdentityApproval
 from app.models.patient_identity_map import PatientIdentityMap
 from app.models.identity_map_revocation import IdentityMapRevocation
+from app.models.patient_mrn import PatientMRN
 from app.services.event_service import EventService
+from app.services.mrn_service import MRNService
 from app.shared.enums import (
     IdentityState,
     IdentityCaseStatus,
@@ -21,6 +23,7 @@ from app.shared.enums import (
     IdentityApprovalDecision,
     Gender,
     UserRole,
+    MRNStatus,
 )
 
 
@@ -251,6 +254,28 @@ class IdentityService:
             )
             self.db.add(mapping)
             self.db.flush()
+            mrn_service = MRNService(self.db)
+            mrn_service.retire_active_mrn(
+                patient_id=case.primary_patient_id,
+                clinic_id=case.clinic_id,
+                reason=case.reason,
+            )
+            active_target_mrn = (
+                self.db.query(PatientMRN)
+                .filter(
+                    PatientMRN.clinic_id == case.clinic_id,
+                    PatientMRN.patient_id == case.target_patient_id,
+                    PatientMRN.status == MRNStatus.ACTIVE,
+                )
+                .first()
+            )
+            if not active_target_mrn:
+                mrn_service.issue_mrn_for_patient(
+                    patient_id=case.target_patient_id,
+                    clinic_id=case.clinic_id,
+                    actor=current_user,
+                    commit=False,
+                )
             primary.identity_state = IdentityState.MERGED
             case.status = IdentityCaseStatus.APPLIED
             self.db.commit()
@@ -364,6 +389,11 @@ class IdentityService:
         before_state = patient.identity_state
         restore_state = IdentityState.PROVISIONAL if patient.created_reason else IdentityState.VERIFIED
         patient.identity_state = restore_state
+        MRNService(self.db).restore_retired_mrn(
+            patient_id=case.primary_patient_id,
+            clinic_id=case.clinic_id,
+            reason=payload.reason,
+        )
         revocation = IdentityMapRevocation(
             clinic_id=case.clinic_id,
             map_id=mapping.id,

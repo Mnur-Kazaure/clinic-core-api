@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, BigInteger, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -51,6 +51,24 @@ class Clinic(Base):
         String(3),
         nullable=False,
         default="NGN",
+    )
+
+    registration_fee_minor: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=100000,
+    )
+
+    registration_fee_required: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    monthly_revenue_target_minor: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
     )
 
     description: Mapped[str | None] = mapped_column(

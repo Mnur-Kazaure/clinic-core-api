@@ -6,7 +6,11 @@ from sqlalchemy import DateTime, Enum, ForeignKeyConstraint, String, CheckConstr
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.shared.enums import AdmissionType, AdmissionStatus
+from app.shared.enums import (
+    AdmissionType,
+    AdmissionStatus,
+    AdmissionDischargeDisposition,
+)
 
 
 class Admission(Base):
@@ -30,6 +34,22 @@ class Admission(Base):
     )
     discharged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+        nullable=True,
+    )
+    discharge_disposition: Mapped[AdmissionDischargeDisposition | None] = mapped_column(
+        Enum(AdmissionDischargeDisposition, name="admission_discharge_disposition"),
+        nullable=True,
+    )
+    transferred_to_facility: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+    )
+    death_pronounced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    discharge_notes: Mapped[str | None] = mapped_column(
+        String(500),
         nullable=True,
     )
     cancelled_at: Mapped[datetime | None] = mapped_column(
@@ -60,8 +80,36 @@ class Admission(Base):
             name="ck_admissions_discharged_at",
         ),
         CheckConstraint(
+            "(status != 'DISCHARGED') OR (discharge_disposition IS NOT NULL)",
+            name="ck_admissions_discharge_disposition_required",
+        ),
+        CheckConstraint(
+            "(status != 'DISCHARGED') OR (cancelled_at IS NULL AND cancel_reason IS NULL)",
+            name="ck_admissions_discharged_not_cancelled",
+        ),
+        CheckConstraint(
             "(status != 'CANCELLED') OR (cancelled_at IS NOT NULL AND cancel_reason IS NOT NULL)",
             name="ck_admissions_cancelled_at_reason",
+        ),
+        CheckConstraint(
+            "(status != 'CANCELLED') OR (discharged_at IS NULL AND discharge_disposition IS NULL)",
+            name="ck_admissions_cancelled_not_discharged",
+        ),
+        CheckConstraint(
+            "(discharge_disposition != 'TRANSFERRED_OUT') OR (transferred_to_facility IS NOT NULL AND length(transferred_to_facility) >= 3)",
+            name="ck_admissions_transfer_requires_facility",
+        ),
+        CheckConstraint(
+            "(discharge_disposition != 'TRANSFERRED_OUT') OR (death_pronounced_at IS NULL)",
+            name="ck_admissions_transfer_no_death_time",
+        ),
+        CheckConstraint(
+            "(discharge_disposition != 'DECEASED') OR (death_pronounced_at IS NOT NULL)",
+            name="ck_admissions_death_requires_time",
+        ),
+        CheckConstraint(
+            "(discharge_disposition != 'DECEASED') OR (transferred_to_facility IS NULL)",
+            name="ck_admissions_death_no_transfer_facility",
         ),
         CheckConstraint(
             "(status != 'ACTIVE') OR (discharged_at IS NULL AND cancelled_at IS NULL)",

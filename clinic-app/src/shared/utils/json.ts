@@ -1,5 +1,5 @@
 export const jsonUtils = {
-  parseVitals(vitals: string | null): Record<string, any> | null {
+  parseVitals(vitals: string | null): Record<string, unknown> | null {
     if (!vitals) return null;
     try {
       return JSON.parse(vitals);
@@ -9,7 +9,7 @@ export const jsonUtils = {
     }
   },
 
-  stringifyVitals(vitals: Record<string, any> | null): string | null {
+  stringifyVitals(vitals: Record<string, unknown> | null): string | null {
     if (!vitals) return null;
     try {
       return JSON.stringify(vitals);

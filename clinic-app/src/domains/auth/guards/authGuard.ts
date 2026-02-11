@@ -12,10 +12,14 @@ import { UserDTO } from '@/shared/types';
 export async function authGuard(): Promise<{isAuthenticated: boolean; user?: UserDTO}> {
   try {
     const user = await roleSessionService.getCurrentUser();
-    console.log('🔐 [authGuard] User fetched:', { id: user.id.substring(0, 8), role: user.role });
     return { isAuthenticated: user.is_active === true, user };
-  } catch (error: any) {
-    console.error('❌ [authGuard] Failed:', error.response?.status || error.message);
+  } catch (error: unknown) {
+    const status =
+      typeof error === 'object' && error && 'response' in error
+        ? (error as { response?: { status?: number } }).response?.status
+        : null;
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('❌ [authGuard] Failed:', status || message);
     return { isAuthenticated: false };
   }
 }

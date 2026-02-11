@@ -1,20 +1,25 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import debounce from 'lodash/debounce';
 import {
   patientService,
   PatientResponse,
 } from '@/domains/patient/services/patientService';
+import { PurposeOfUse } from '@/shared/enums';
 
 interface PatientSearchProps {
   onSelectPatient: (patient: PatientResponse | null) => void;
   disabled?: boolean;
+  purposeOfUse?: PurposeOfUse;
+  searchJustification?: string;
 }
 
 export function PatientSearch({
   onSelectPatient,
   disabled = false,
+  purposeOfUse,
+  searchJustification,
 }: PatientSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<PatientResponse[]>([]);
@@ -23,30 +28,53 @@ export function PatientSearch({
   const [selectedPatient, setSelectedPatient] =
     useState<PatientResponse | null>(null);
 
-  const performSearch = useCallback(
-    debounce(async (term: string) => {
-      if (!term.trim() || term.trim().length < 2) {
-        setResults([]);
-        return;
-      }
+  const performSearch = useMemo(
+    () =>
+      debounce(async (term: string) => {
+        if (!term.trim() || term.trim().length < 2) {
+          setResults([]);
+          return;
+        }
 
       try {
+        const effectivePurpose = purposeOfUse ?? PurposeOfUse.OPERATIONS;
+        const effectiveJustification =
+          searchJustification?.trim() || 'Reception patient search';
+
+        if (effectiveJustification.length < 2) {
+          setError('Search requires an audit justification.');
+          setResults([]);
+          return;
+        }
+
         setLoading(true);
         setError(null);
         const data = await patientService.searchPatients({
           q: term,
           limit: 10,
+          purpose_of_use: effectivePurpose,
+          justification: effectiveJustification,
         });
         setResults(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Search failed:', err);
-        setError('Search failed. Please try again.');
+        const response =
+          typeof err === 'object' && err && 'response' in err
+            ? (err as { response?: { status?: number } }).response
+            : undefined;
+        if (response?.status === 422) {
+          setError(
+            'Search requires audit justification. Please reload and try again.'
+          );
+        } else {
+          setError('Search failed. Please try again.');
+        }
         setResults([]);
       } finally {
         setLoading(false);
       }
-    }, 300),
-    []
+      }, 300),
+    [purposeOfUse, searchJustification]
   );
 
   useEffect(() => {
@@ -162,7 +190,12 @@ export function PatientSearch({
                       📞 {patient.phone_number} • 🎂 {patient.date_of_birth}
                     </div>
                     <div className="text-sm text-gray-700">
-                      📍 {patient.address.substring(0, 30)}...
+                      📍{' '}
+                      {patient.address
+                        ? `${patient.address.substring(0, 30)}${
+                            patient.address.length > 30 ? '...' : ''
+                          }`
+                        : 'Address unavailable'}
                     </div>
                     <div className="mt-2 text-sm font-medium text-blue-600">
                       Use this patient

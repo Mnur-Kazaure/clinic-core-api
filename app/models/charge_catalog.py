@@ -14,6 +14,7 @@ class ChargeCatalog(Base):
     clinic_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, default="OTHER")
     default_amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

@@ -14,9 +14,17 @@ from app.shared.enums import UserRole
 
 
 def ensure_visit_in_consultation(visit: Visit):
-    if visit.status != VisitStatus.IN_CONSULTATION:
+    # Flexible workflow: allow starting a consultation for active clinical visits,
+    # even if labs/pharmacy have already been initiated.
+    allowed = {
+        VisitStatus.IN_CONSULTATION,
+        VisitStatus.LAB_REQUESTED,
+        VisitStatus.LAB_COMPLETED,
+        VisitStatus.PHARMACY_PENDING,
+    }
+    if visit.status not in allowed:
         raise ValueError(
-            "Consultation can only start when visit is IN_CONSULTATION"
+            "Consultation can only start for an active clinical visit"
         )
 
 

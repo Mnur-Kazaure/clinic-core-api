@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { visitService } from '@/domains/visit/services/visitService';
 import { VisitResponse } from '@/shared/types';
-import { consultationService } from '@/domains/consultation/services/consultationService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
@@ -13,21 +12,20 @@ interface DoctorQueueProps {
   onStartConsultation?: (visit: VisitResponse) => void;
   onViewVisit?: (visit: VisitResponse) => void;
   onSelectPatient?: (visit: VisitResponse, hasConsultation: boolean) => void;
+  refreshToken?: number;
 }
 
 export function DoctorQueue({
   onStartConsultation,
   onViewVisit,
   onSelectPatient,
+  refreshToken,
 }: DoctorQueueProps) {
   const [visits, setVisits] = useState<VisitResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] =
     useState<string>('IN_CONSULTATION');
-  const [consultationStatus, setConsultationStatus] = useState<
-    Record<string, 'none' | 'in_progress' | 'completed'>
-  >({});
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const statusOptions = [
@@ -35,6 +33,11 @@ export function DoctorQueue({
       value: 'IN_CONSULTATION',
       label: 'In Consultation',
       color: 'bg-purple-100 text-purple-800',
+    },
+    {
+      value: 'EMERGENCY',
+      label: 'Emergency',
+      color: 'bg-red-100 text-red-800',
     },
     {
       value: 'TRIAGED',
@@ -48,47 +51,25 @@ export function DoctorQueue({
     },
   ];
 
-  const loadQueue = async () => {
+  const loadQueue = useCallback(async () => {
     try {
       setError(null);
-      const data = await visitService.getDoctorQueue(statusFilter);
-      setVisits(data);
-
-      const consultationChecks = await Promise.all(
-        data.map(async (visit) => {
-          try {
-            const consultation =
-              await consultationService.getConsultationByVisit(visit.id);
-            if (!consultation) {
-              return { visitId: visit.id, status: 'none' as const };
-            }
-            return {
-              visitId: visit.id,
-              status: consultation.completed_at ? 'completed' : 'in_progress',
-            };
-          } catch {
-            return { visitId: visit.id, status: 'none' as const };
-          }
-        })
+      const isEmergencyFilter = statusFilter === 'EMERGENCY';
+      const data = await visitService.getDoctorQueue(
+        isEmergencyFilter ? undefined : statusFilter
       );
-
-      const statusMap = consultationChecks.reduce(
-        (acc, curr) => ({
-          ...acc,
-          [curr.visitId]: curr.status,
-        }),
-        {}
-      );
-
-      setConsultationStatus(statusMap);
+      const filtered = isEmergencyFilter
+        ? data.filter((visit) => visit.intake_emergency_flag)
+        : data;
+      setVisits(filtered);
       setLastUpdated(new Date());
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load doctor queue:', err);
       setError('Unable to load your patient queue. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -103,7 +84,7 @@ export function DoctorQueue({
         clearInterval(intervalId);
       }
     };
-  }, [statusFilter]);
+  }, [loadQueue, refreshToken]);
 
   const handleStartConsultation = async (visit: VisitResponse) => {
     try {
@@ -134,6 +115,9 @@ export function DoctorQueue({
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays}d ago`;
   };
+
+  const maskId = (value?: string | null) =>
+    value ? `${value.substring(0, 6)}…${value.substring(value.length - 4)}` : '—';
 
   if (loading && visits.length === 0) {
     return (
@@ -227,21 +211,33 @@ export function DoctorQueue({
         {!error && visits.length > 0 && (
           <div className="border rounded-lg divide-y">
             {visits.map((visit) => {
-              const consultStatus = consultationStatus[visit.id];
+              const consultStatus = visit.consultation_status || 'none';
               const hasConsultation = consultStatus === 'in_progress' || consultStatus === 'completed';
 
               return (
                 <div
                   key={visit.id}
                   className="p-4 hover:bg-gray-50"
-                  onClick={() =>
-                    onSelectPatient && onSelectPatient(visit, hasConsultation)
-                  }
+                  onClick={() => {
+                    if (onSelectPatient) {
+                      onSelectPatient(visit, hasConsultation);
+                    }
+                  }}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-3">
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
                         <VisitStatusBadge status={visit.status} size="sm" />
+                        {visit.intake_emergency_flag && (
+                          <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                            Emergency
+                          </span>
+                        )}
+                        {visit.has_active_admission && (
+                          <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
+                            Admitted
+                          </span>
+                        )}
                         {consultStatus === 'in_progress' && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             Consultation started
@@ -261,7 +257,9 @@ export function DoctorQueue({
                             {visit.patient_name || 'Unknown patient'}
                           </p>
                           <p className="text-xs text-gray-500">
-                            ID: {visit.patient_id.substring(0, 8)}...
+                            {visit.patient_mrn
+                              ? `MRN: ${visit.patient_mrn}`
+                              : `ID: ${maskId(visit.patient_id)}`}
                           </p>
                         </div>
                         <div>
@@ -279,7 +277,7 @@ export function DoctorQueue({
                       </div>
 
                       <div className="mt-3 flex items-center text-xs text-gray-500">
-                        <span>Visit ID: {visit.id.substring(0, 8)}...</span>
+                        <span>Visit ID: {maskId(visit.id)}</span>
                       </div>
                     </div>
 
@@ -304,7 +302,9 @@ export function DoctorQueue({
                           variant="secondary"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onStartConsultation && onStartConsultation(visit);
+                            if (onStartConsultation) {
+                              onStartConsultation(visit);
+                            }
                           }}
                         >
                           Continue Consultation
@@ -329,7 +329,9 @@ export function DoctorQueue({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onViewVisit && onViewVisit(visit);
+                          if (onViewVisit) {
+                            onViewVisit(visit);
+                          }
                         }}
                         className="text-sm font-medium text-blue-700 hover:text-blue-800 underline underline-offset-2"
                       >

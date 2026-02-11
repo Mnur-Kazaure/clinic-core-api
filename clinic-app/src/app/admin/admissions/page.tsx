@@ -35,6 +35,11 @@ export default function AdmissionRequestsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<AdmissionRequestStatus>('PENDING');
+  const [decisionModalOpen, setDecisionModalOpen] = useState(false);
+  const [decisionRequestId, setDecisionRequestId] = useState<string | null>(null);
+  const [decisionAction, setDecisionAction] = useState<'approve' | 'reject'>('approve');
+  const [decisionReason, setDecisionReason] = useState('');
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const [bedActionRequest, setBedActionRequest] = useState<AdmissionRequest | null>(null);
   const [bedActionMode, setBedActionMode] = useState<BedActionMode>('assign');
   const [bedActionModalOpen, setBedActionModalOpen] = useState(false);
@@ -164,20 +169,6 @@ export default function AdmissionRequestsPage() {
           : null;
       const normalized = (detail || '').toLowerCase();
 
-      if (normalized.includes('active bed assignment')) {
-        setBedActionMode('transfer');
-        setBedActionError(
-          'This admission already has an active bed assignment. Use Transfer Bed.'
-        );
-        return;
-      }
-      if (normalized.includes('no active bed assignment')) {
-        setBedActionMode('assign');
-        setBedActionError(
-          'No active bed assignment found. Use Assign Bed first.'
-        );
-        return;
-      }
       if (normalized.includes('bed not available')) {
         await loadBedsAndWards(selectedWard === 'all' ? undefined : selectedWard);
         setBedActionError(
@@ -197,32 +188,51 @@ export default function AdmissionRequestsPage() {
     }
   };
 
-  const handleDecision = async (
+  const openDecisionModal = (
     requestId: string,
     action: 'approve' | 'reject'
   ) => {
-    const reason = prompt(
-      action === 'approve'
-        ? 'Approval reason (required):'
-        : 'Rejection reason (required):'
-    );
-    if (!reason || reason.trim().length < 3) return;
+    setDecisionRequestId(requestId);
+    setDecisionAction(action);
+    setDecisionReason('');
+    setDecisionError(null);
+    setDecisionModalOpen(true);
+  };
+
+  const closeDecisionModal = () => {
+    setDecisionModalOpen(false);
+    setDecisionRequestId(null);
+    setDecisionError(null);
+  };
+
+  const handleDecisionSubmit = async () => {
+    if (!decisionRequestId) return;
+    if (decisionReason.trim().length < 3) {
+      setDecisionError('Reason must be at least 3 characters.');
+      return;
+    }
 
     try {
-      setActionLoading(requestId);
-      if (action === 'approve') {
-        await admissionRequestService.approveRequest(requestId, { reason });
+      setActionLoading(decisionRequestId);
+      setDecisionError(null);
+      if (decisionAction === 'approve') {
+        await admissionRequestService.approveRequest(decisionRequestId, {
+          reason: decisionReason.trim(),
+        });
       } else {
-        await admissionRequestService.rejectRequest(requestId, { reason });
+        await admissionRequestService.rejectRequest(decisionRequestId, {
+          reason: decisionReason.trim(),
+        });
       }
       await loadRequests();
+      closeDecisionModal();
     } catch (err: unknown) {
       const detail =
         typeof err === 'object' && err && 'response' in err
           ? (err as { response?: { data?: { detail?: string } } }).response?.data
               ?.detail
           : null;
-      setError(detail || 'Action failed.');
+      setDecisionError(detail || 'Action failed.');
     } finally {
       setActionLoading(null);
     }
@@ -319,7 +329,7 @@ export default function AdmissionRequestsPage() {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => handleDecision(request.id, 'approve')}
+                        onClick={() => openDecisionModal(request.id, 'approve')}
                         isLoading={actionLoading === request.id}
                         disabled={listActionLocked}
                       >
@@ -328,7 +338,7 @@ export default function AdmissionRequestsPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDecision(request.id, 'reject')}
+                        onClick={() => openDecisionModal(request.id, 'reject')}
                         isLoading={actionLoading === request.id}
                         disabled={listActionLocked}
                       >
@@ -339,23 +349,37 @@ export default function AdmissionRequestsPage() {
 
                   {request.status === 'APPROVED' && request.admission_id && (
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => openBedActionModal(request, 'assign')}
-                        disabled={listActionLocked}
-                      >
-                        Assign Bed
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openBedActionModal(request, 'transfer')}
-                        disabled={listActionLocked}
-                      >
-                        Transfer Bed
-                      </Button>
+                      {request.has_active_bed_assignment ? (
+                        <>
+                          <Badge variant="outline" size="sm">
+                            Bed {request.current_bed_label || 'Assigned'}
+                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openBedActionModal(request, 'transfer')}
+                            disabled={listActionLocked}
+                          >
+                            Transfer Bed
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => openBedActionModal(request, 'assign')}
+                          disabled={listActionLocked}
+                        >
+                          Assign Bed
+                        </Button>
+                      )}
                     </div>
+                  )}
+
+                  {request.status === 'APPROVED' && !request.admission_id && (
+                    <Badge variant="warning" size="sm">
+                      Admission record unavailable
+                    </Badge>
                   )}
                 </div>
               ))}
@@ -363,6 +387,64 @@ export default function AdmissionRequestsPage() {
           )}
         </div>
       </Card>
+
+      {decisionModalOpen && decisionRequestId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-6 py-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                Admission decision
+              </p>
+              <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                {decisionAction === 'approve'
+                  ? 'Approve admission request'
+                  : 'Reject admission request'}
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Reason is required for audit traceability.
+              </p>
+            </div>
+
+            <div className="space-y-4 px-6 py-5">
+              {decisionError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {decisionError}
+                </div>
+              )}
+              <Input
+                label="Decision reason *"
+                placeholder={
+                  decisionAction === 'approve'
+                    ? 'Approval justification'
+                    : 'Rejection reason'
+                }
+                value={decisionReason}
+                onChange={(event) => setDecisionReason(event.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={closeDecisionModal}
+                disabled={actionLoading !== null}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant={decisionAction === 'approve' ? 'primary' : 'outline'}
+                size="sm"
+                onClick={handleDecisionSubmit}
+                isLoading={actionLoading !== null}
+                disabled={decisionReason.trim().length < 3}
+              >
+                {decisionAction === 'approve' ? 'Approve' : 'Reject'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {bedActionModalOpen && bedActionRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

@@ -7,11 +7,14 @@ import { StaffResponse, UserDTO } from '@/shared/types';
 import { Card } from '@/shared/Card';
 import { Button } from '@/shared/Button';
 import { Input } from '@/shared/Input';
+import { Alert } from '@/shared/Alert';
+import { StatusBadge } from '@/shared/StatusBadge';
 import { StaffFormModal, StaffFormPayload } from './StaffFormModal';
 
 export function StaffDirectory() {
   const [staff, setStaff] = useState<StaffResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<UserDTO | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,9 +56,13 @@ export function StaffDirectory() {
     });
   }, [staff, roleFilter, searchTerm, statusFilter]);
 
-  const loadStaff = async () => {
+  const loadStaff = async (mode: 'initial' | 'refresh' = 'initial') => {
     try {
-      setLoading(true);
+      if (mode === 'initial') {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       setError(null);
       const data = await clinicService.listStaff();
       setStaff(data);
@@ -63,7 +70,11 @@ export function StaffDirectory() {
       console.error('Failed to load staff list:', err);
       setError('Unable to load staff list.');
     } finally {
-      setLoading(false);
+      if (mode === 'initial') {
+        setLoading(false);
+      } else {
+        setRefreshing(false);
+      }
     }
   };
 
@@ -97,7 +108,11 @@ export function StaffDirectory() {
   };
 
   const handleDelete = async (member: StaffResponse) => {
-    if (!confirm(`Delete ${member.full_name || member.email}?`)) {
+    if (
+      !confirm(
+        `Delete ${member.full_name || member.email}? This action removes access immediately.`
+      )
+    ) {
       return;
     }
 
@@ -134,7 +149,7 @@ export function StaffDirectory() {
 
   if (loading) {
     return (
-      <Card title="Staff Directory" titleClassName="text-[#0B4DA2]">
+      <Card title="Staff Directory" titleClassName="text-slate-900">
         <div className="space-y-3">
           <div className="animate-pulse h-6 bg-gray-200 rounded w-1/3"></div>
           <div className="animate-pulse h-10 bg-gray-200 rounded"></div>
@@ -145,22 +160,23 @@ export function StaffDirectory() {
   }
 
   return (
-    <Card title="Staff Directory" titleClassName="text-[#0B4DA2]">
+    <Card title="Staff Directory" titleClassName="text-slate-900">
       <div className="space-y-4">
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-            {error}
-          </div>
-        )}
+        {error && <Alert variant="error">{error}</Alert>}
 
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex flex-wrap gap-3 text-sm text-gray-600">
             <span>Total: {staffStats.total}</span>
             <span>Active: {staffStats.active}</span>
+            <span>Disabled: {staffStats.disabled}</span>
             <span>Doctors: {staffStats.doctors}</span>
           </div>
           <div className="flex gap-3">
-            <Button variant="secondary" onClick={loadStaff}>
+            <Button
+              variant="secondary"
+              onClick={() => loadStaff('refresh')}
+              isLoading={refreshing}
+            >
               Refresh
             </Button>
             <Button variant="primary" onClick={handleCreate}>
@@ -259,13 +275,13 @@ export function StaffDirectory() {
         </div>
 
         {staff.length === 0 && !error && (
-          <div className="text-sm text-gray-500">
+          <div className="rounded-md border border-slate-200 bg-white p-4 text-sm text-gray-600">
             No staff members have been added yet.
           </div>
         )}
 
         {staff.length > 0 && filteredStaff.length === 0 && !error && (
-          <div className="text-sm text-gray-500">
+          <div className="rounded-md border border-slate-200 bg-white p-4 text-sm text-gray-600">
             No staff match the current filters.
           </div>
         )}
@@ -297,15 +313,10 @@ export function StaffDirectory() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          member.is_active
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {member.is_active ? 'Active' : 'Disabled'}
-                      </span>
+                      <StatusBadge
+                        label={member.is_active ? 'Active' : 'Disabled'}
+                        variant={member.is_active ? 'success' : 'neutral'}
+                      />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600">
                       {member.role === 'DOCTOR' ? (
@@ -335,7 +346,7 @@ export function StaffDirectory() {
                       </Button>
                       <Button
                         size="sm"
-                        variant="secondary"
+                        variant="danger"
                         onClick={() => handleDelete(member)}
                         disabled={currentUser?.id === member.id}
                       >

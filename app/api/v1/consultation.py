@@ -1,12 +1,13 @@
 # app/api/v1/consultation.py
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from app.core.database import get_db
 from app.core.auth.dependencies import get_current_user
 
 # from app.core.dependencies import get_current_user
 from app.core.rbac import require_doctor
 from app.models.visit import Visit
+from app.models.consultation import Consultation
 from app.schemas.consultation import (
     ConsultationCreateRequest,
     ConsultationResponse,
@@ -18,6 +19,7 @@ from app.shared.enums import VisitStatus, PurposeOfUse
 
 
 from app.core.guards.consultation_guards import (
+    ensure_assigned_doctor,
     require_consultation_access,
     require_consultation_access_by_visit,
 )
@@ -32,6 +34,7 @@ router = APIRouter(prefix="/consultations", tags=["Consultations"])
 )
 def start_consultation(
     payload: ConsultationCreateRequest,
+    response: Response,
     db=Depends(get_db),
     current_user=Depends(require_doctor),
 ):
@@ -44,18 +47,39 @@ def start_consultation(
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
 
-    if visit.status != VisitStatus.IN_CONSULTATION:
-        raise HTTPException(
-            status_code=400,
-            detail="Visit not ready for consultation",
-        )
+    existing = (
+        db.query(Consultation)
+        .filter(Consultation.visit_id == visit.id)
+        .first()
+    )
+    if existing:
+        try:
+            ensure_assigned_doctor(visit, current_user)
+        except PermissionError as e:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(e),
+            )
+        response.status_code = status.HTTP_200_OK
+        return existing
 
     service = ConsultationService(db)
 
     try:
-        return service.start_consultation(visit, current_user)
+        consultation = service.start_consultation(visit, current_user)
+        response.status_code = status.HTTP_201_CREATED
+        return consultation
 
     except ValueError as e:
+        if "already exists" in str(e):
+            existing = (
+                db.query(Consultation)
+                .filter(Consultation.visit_id == visit.id)
+                .first()
+            )
+            if existing:
+                response.status_code = status.HTTP_200_OK
+                return existing
         # Domain rule violation → client error
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

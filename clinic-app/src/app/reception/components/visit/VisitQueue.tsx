@@ -27,17 +27,26 @@ export function VisitQueue({
 
   const statusOptions = [
     { value: 'all', label: 'All Visits' },
+    { value: 'EMERGENCY', label: 'Emergency' },
+    { value: 'ADMITTED', label: 'Admitted' },
     { value: 'REGISTERED', label: 'Registered' },
     { value: 'TRIAGED', label: 'Triaged' },
     { value: 'IN_CONSULTATION', label: 'In Consultation' },
     { value: 'LAB_REQUESTED', label: 'Lab Requested' },
     { value: 'PHARMACY_PENDING', label: 'Pharmacy Pending' },
+    { value: 'COMPLETED', label: 'Completed' },
+    { value: 'CANCELLED', label: 'Cancelled' },
   ];
 
   const loadQueue = async () => {
     try {
+      setLoading(true);
       setError(null);
-      const statusParam = statusFilter === 'all' ? undefined : statusFilter;
+      const isSpecialFilter =
+        statusFilter === 'all' ||
+        statusFilter === 'EMERGENCY' ||
+        statusFilter === 'ADMITTED';
+      const statusParam = isSpecialFilter ? undefined : statusFilter;
       const data = await visitService.getQueue(statusParam);
       setVisits(data);
       setLastUpdated(new Date());
@@ -64,8 +73,11 @@ export function VisitQueue({
     loadQueue();
   }, [statusFilter]);
 
+
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { color: string; label: string }> = {
+      EMERGENCY: { color: 'bg-red-100 text-red-800', label: 'Emergency' },
+      ADMITTED: { color: 'bg-rose-100 text-rose-800', label: 'Admitted' },
       REGISTERED: { color: 'bg-blue-100 text-blue-800', label: 'Registered' },
       TRIAGED: { color: 'bg-yellow-100 text-yellow-800', label: 'Triaged' },
       IN_CONSULTATION: {
@@ -100,6 +112,21 @@ export function VisitQueue({
         {config.label}
       </span>
     );
+  };
+
+  const maskId = (value?: string | null) =>
+    value ? `${value.substring(0, 8)}...` : 'Unknown';
+
+  const formatWaitingTime = (dateString?: string | null) => {
+    const date = parseDate(dateString);
+    if (!date) return 'Unknown';
+    const now = new Date();
+    const diffMs = Math.max(now.getTime() - date.getTime(), 0);
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m`;
+    const diffHours = Math.floor(diffMins / 60);
+    return `${diffHours}h ${diffMins % 60}m`;
   };
 
   const parseDate = (dateString?: string | null) => {
@@ -146,9 +173,12 @@ export function VisitQueue({
     );
   }
 
-  const filteredVisits = visits.filter(
-    (visit) => statusFilter === 'all' || visit.status === statusFilter
-  );
+  const filteredVisits = visits.filter((visit) => {
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'EMERGENCY') return Boolean(visit.intake_emergency_flag);
+    if (statusFilter === 'ADMITTED') return Boolean(visit.has_active_admission);
+    return visit.status === statusFilter;
+  });
 
   return (
     <Card title="Visit Queue" titleClassName="text-[#0B4DA2]">
@@ -237,8 +267,18 @@ export function VisitQueue({
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
                       {getStatusBadge(visit.status)}
+                      {visit.intake_emergency_flag && (
+                        <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                          Emergency
+                        </span>
+                      )}
+                      {visit.has_active_admission && (
+                        <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
+                          Admitted
+                        </span>
+                      )}
                       <span className="text-sm text-gray-500">
                         Started {formatTime(visit.created_at)}
                       </span>
@@ -251,7 +291,9 @@ export function VisitQueue({
                           {visit.patient_name || 'Unknown patient'}
                         </p>
                         <p className="text-xs text-gray-500">
-                          ID: {visit.patient_id.substring(0, 8)}...
+                          {visit.patient_mrn
+                            ? `MRN: ${visit.patient_mrn}`
+                            : `ID: ${maskId(visit.patient_id)}`}
                         </p>
                       </div>
                       <div>
@@ -260,6 +302,9 @@ export function VisitQueue({
                           {visit.assigned_doctor_id
                             ? `${visit.assigned_doctor_id.substring(0, 8)}...`
                             : 'Unassigned'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Waiting {formatWaitingTime(visit.created_at)}
                         </p>
                       </div>
                       <div>
@@ -271,7 +316,9 @@ export function VisitQueue({
                     </div>
 
                     <div className="mt-3 flex items-center text-xs text-gray-500">
-                      <span>Visit ID: {visit.id.substring(0, 8)}...</span>
+                      <span>
+                        Visit ID: {maskId(visit.id)}
+                      </span>
                       <span className="mx-2">•</span>
                       <span>
                         Created:{' '}
@@ -304,26 +351,6 @@ export function VisitQueue({
 
         {!error && visits.length > 0 && (
           <div className="pt-4 border-t">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">Summary</h4>
-            <div className="flex flex-wrap gap-3">
-              {statusOptions
-                .filter((option) => option.value !== 'all')
-                .map((option) => (
-                  <div key={option.value} className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-600">
-                      {option.label}:
-                    </span>
-                    <span className="text-sm font-medium text-gray-900">
-                      {visits.filter((v) => v.status === option.value).length}
-                    </span>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {!error && visits.length > 0 && (
-          <div className="pt-4 border-t">
             <h4 className="text-sm font-medium text-gray-900 mb-2">
               Queue Summary
             </h4>
@@ -331,8 +358,12 @@ export function VisitQueue({
               {statusOptions
                 .filter((opt) => opt.value !== 'all')
                 .map((opt) => {
-                  const count = visits.filter((v) => v.status === opt.value)
-                    .length;
+                  const count =
+                    opt.value === 'EMERGENCY'
+                      ? visits.filter((v) => v.intake_emergency_flag).length
+                      : opt.value === 'ADMITTED'
+                      ? visits.filter((v) => v.has_active_admission).length
+                      : visits.filter((v) => v.status === opt.value).length;
                   if (count === 0) return null;
 
                   return (

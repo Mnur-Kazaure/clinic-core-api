@@ -11,36 +11,66 @@ import { PatientRegistrationForm } from '@/app/reception/components/patient/Pati
 import { VisitResponse } from '@/shared/types';
 import { visitService } from '@/domains/visit/services/visitService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
+import { PurposeOfUse } from '@/shared/enums';
 
 export default function ReceptionPage() {
   const [isStartVisitModalOpen, setIsStartVisitModalOpen] = useState(false);
   const [showRegistrationForm, setShowRegistrationForm] = useState(false);
   const [refreshQueue, setRefreshQueue] = useState(0);
-  const [selectedVisit, setSelectedVisit] = useState<VisitResponse | null>(null);
+  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [recentVisits, setRecentVisits] = useState<VisitResponse[]>([]);
   const [recentLoading, setRecentLoading] = useState(false);
   const [recentError, setRecentError] = useState<string | null>(null);
+  const [recentMrnIssued, setRecentMrnIssued] = useState<string | null>(null);
+  const [recentPatientName, setRecentPatientName] = useState<string | null>(null);
+  const [queueStats, setQueueStats] = useState({
+    total: 0,
+    waiting: 0,
+    completed: 0,
+    emergency: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
-  const handleVisitCreated = (visitId: string) => {
-    console.log('Visit created:', visitId);
+  const handleVisitCreated = () => {
     setIsStartVisitModalOpen(false);
     setRefreshQueue((prev) => prev + 1);
   };
 
-  const handlePatientRegistered = (patientId: string) => {
-    console.log('Patient registered:', patientId);
+  const handlePatientRegistered = (mrn?: string | null, patientName?: string | null) => {
+    if (mrn) {
+      setRecentMrnIssued(mrn);
+    }
+    if (patientName) {
+      setRecentPatientName(patientName);
+    }
     setShowRegistrationForm(false);
   };
 
   const handleVisitClick = (visit: VisitResponse) => {
-    setSelectedVisit(visit);
+    setSelectedVisitId(visit.id);
     setIsDetailsModalOpen(true);
   };
 
-  const refreshDashboard = () => {
-    setRefreshQueue((prev) => prev + 1);
+  const refreshDashboard = async () => {
+    try {
+      const queue = await visitService.getQueue();
+      const pending = queue.filter(
+        (visit) => visit.status === 'PHARMACY_PENDING'
+      );
+      await Promise.all(
+        pending.map((visit) =>
+          visitService.recheckAutoComplete(visit.id).catch(() => null)
+        )
+      );
+    } finally {
+      setRefreshQueue((prev) => prev + 1);
+    }
   };
+
+  const maskId = (value?: string | null) =>
+    value ? `${value.substring(0, 8)}...` : 'Unknown';
 
   useEffect(() => {
     let isMounted = true;
@@ -71,6 +101,57 @@ export default function ReceptionPage() {
     };
   }, [refreshQueue]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadStats() {
+      try {
+        setStatsLoading(true);
+        setStatsError(null);
+        const [queueData, completedData] = await Promise.all([
+          visitService.getQueue(),
+          visitService.getQueue('COMPLETED'),
+        ]);
+        if (!isMounted) return;
+        const total = queueData.length;
+        const waiting = queueData.filter((visit) =>
+          ['REGISTERED', 'TRIAGED'].includes(visit.status)
+        ).length;
+        const completed = completedData.length;
+        const emergency = queueData.filter(
+          (visit) => visit.intake_emergency_flag
+        ).length;
+        setQueueStats({ total, waiting, completed, emergency });
+      } catch (error) {
+        if (isMounted) {
+          setStatsError('Metrics unavailable');
+          setQueueStats({ total: 0, waiting: 0, completed: 0, emergency: 0 });
+        }
+      } finally {
+        if (isMounted) {
+          setStatsLoading(false);
+        }
+      }
+    }
+
+    loadStats();
+    return () => {
+      isMounted = false;
+    };
+  }, [refreshQueue]);
+
+  useEffect(() => {
+    if (!recentMrnIssued) return;
+    const timer = setTimeout(() => {
+      setRecentMrnIssued(null);
+      setRecentPatientName(null);
+    }, 12000);
+    return () => clearTimeout(timer);
+  }, [recentMrnIssued]);
+
+  const formatStat = (value: number) => (statsLoading ? '—' : value);
+
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow border-b">
@@ -84,7 +165,10 @@ export default function ReceptionPage() {
                 Manage patient visits and clinic workflow
               </p>
             </div>
-            <div className="mt-4 sm:mt-0 flex space-x-3">
+            <div className="mt-4 sm:mt-0 flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                Today • {new Date().toLocaleDateString()}
+              </span>
               <Button
                 variant="primary"
                 onClick={() => setIsStartVisitModalOpen(true)}
@@ -105,26 +189,48 @@ export default function ReceptionPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600">12</div>
-              <p className="text-gray-600">Today's Visits</p>
+              <div className="text-3xl font-bold text-blue-600">
+                {formatStat(queueStats.total)}
+              </div>
+              <p className="text-gray-600">Queue Total</p>
+              <p className="text-xs text-gray-400 mt-1">Active queue scope</p>
             </div>
           </Card>
           <Card>
             <div className="text-center">
-              <div className="text-3xl font-bold text-yellow-600">5</div>
-              <p className="text-gray-600">Waiting</p>
+              <div className="text-3xl font-bold text-yellow-600">
+                {formatStat(queueStats.waiting)}
+              </div>
+              <p className="text-gray-600">Waiting (Registered/Triaged)</p>
+              <p className="text-xs text-gray-400 mt-1">Active queue scope</p>
             </div>
           </Card>
           <Card>
             <div className="text-center">
-              <div className="text-3xl font-bold text-green-600">7</div>
-              <p className="text-gray-600">Completed</p>
+              <div className="text-3xl font-bold text-green-600">
+                {formatStat(queueStats.completed)}
+              </div>
+              <p className="text-gray-600">Completed (Queue)</p>
+              <p className="text-xs text-gray-400 mt-1">Completed in queue</p>
+            </div>
+          </Card>
+          <Card>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-red-600">
+                {formatStat(queueStats.emergency)}
+              </div>
+              <p className="text-gray-600">Emergency (Queue)</p>
+              <p className="text-xs text-gray-400 mt-1">Flagged emergency</p>
             </div>
           </Card>
         </div>
+
+        {statsError && (
+          <div className="mb-6 text-sm text-red-600">{statsError}</div>
+        )}
 
         {showRegistrationForm && (
           <div className="mb-8">
@@ -135,9 +241,46 @@ export default function ReceptionPage() {
           </div>
         )}
 
+        {recentMrnIssued && (
+          <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold text-emerald-900">
+                  {recentPatientName ?? 'Patient'} registered successfully.
+                </p>
+                <p className="text-emerald-800">
+                  MRN: <span className="font-semibold">{recentMrnIssued}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsStartVisitModalOpen(true)}
+                >
+                  Start Visit
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setRecentMrnIssued(null);
+                    setRecentPatientName(null);
+                  }}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-emerald-700">
+              This message will disappear automatically.
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
-          <Card title="Quick Actions" titleClassName="text-[#0B4DA2]">
+            <Card title="Quick Actions" titleClassName="text-[#0B4DA2]">
               <div className="space-y-3">
                 <Button
                   variant="primary"
@@ -161,44 +304,47 @@ export default function ReceptionPage() {
                   Refresh Dashboard
                 </Button>
               </div>
+              <p className="mt-3 text-xs text-gray-500">
+                PMR access is audited. Use break-glass only for inactive visits.
+              </p>
+            </Card>
 
-              <div className="mt-6 pt-6 border-t">
-                <h3 className="text-sm font-medium text-gray-900 mb-3">
-                  Recent Activity
-                </h3>
-                {recentLoading && (
-                  <div className="text-sm text-gray-500">Loading activity...</div>
-                )}
-                {recentError && (
-                  <div className="text-sm text-red-600">{recentError}</div>
-                )}
-                {!recentLoading && !recentError && recentVisits.length === 0 && (
-                  <div className="text-sm text-gray-500">
-                    No recent visits yet.
-                  </div>
-                )}
-                {!recentLoading && !recentError && recentVisits.length > 0 && (
-                  <div className="space-y-3">
-                    {recentVisits.map((visit) => (
-                      <button
-                        key={visit.id}
-                        onClick={() => handleVisitClick(visit)}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-left transition hover:bg-gray-50"
-                      >
+            <Card title="Recent Activity" titleClassName="text-[#0B4DA2]" className="mt-6">
+              {recentLoading && (
+                <div className="text-sm text-gray-500">Loading activity...</div>
+              )}
+              {recentError && (
+                <div className="text-sm text-red-600">{recentError}</div>
+              )}
+              {!recentLoading && !recentError && recentVisits.length === 0 && (
+                <div className="text-sm text-gray-500">No recent visits yet.</div>
+              )}
+              {!recentLoading && !recentError && recentVisits.length > 0 && (
+                <div className="space-y-3">
+                  {recentVisits.map((visit) => (
+                    <button
+                      key={visit.id}
+                      onClick={() => handleVisitClick(visit)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-left transition hover:bg-gray-50"
+                    >
+                      <div className="flex items-center justify-between">
                         <p className="text-sm font-semibold text-gray-900">
                           {visit.patient_name || 'Unknown patient'}
                         </p>
-                        <div className="mt-1 flex items-center justify-between text-xs text-gray-600">
-                          <VisitStatusBadge status={visit.status} size="sm" />
-                          <span>
-                            {new Date(visit.updated_at).toLocaleTimeString()}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                        <VisitStatusBadge status={visit.status} size="sm" />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {visit.patient_mrn
+                          ? `MRN: ${visit.patient_mrn}`
+                          : `ID: ${maskId(visit.patient_id)}`}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Updated {new Date(visit.updated_at).toLocaleTimeString()}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
             </Card>
           </div>
 
@@ -206,9 +352,6 @@ export default function ReceptionPage() {
             <VisitQueue
               autoRefresh={true}
               refreshInterval={30000}
-              onVisitSelect={(visit) => {
-                console.log('Visit selected:', visit.id);
-              }}
               onVisitClick={handleVisitClick}
               key={refreshQueue}
             />
@@ -219,15 +362,20 @@ export default function ReceptionPage() {
           isOpen={isStartVisitModalOpen}
           onClose={() => setIsStartVisitModalOpen(false)}
           onSuccess={handleVisitCreated}
+          onContinueVisit={(visitId) => {
+            setSelectedVisitId(visitId);
+            setIsDetailsModalOpen(true);
+          }}
         />
 
         <VisitDetailsModal
-          visitId={selectedVisit?.id || null}
+          visitId={selectedVisitId || null}
           isOpen={isDetailsModalOpen}
           onClose={() => {
             setIsDetailsModalOpen(false);
-            setSelectedVisit(null);
+            setSelectedVisitId(null);
           }}
+          purposeOfUse={PurposeOfUse.OPERATIONS}
         />
       </main>
 

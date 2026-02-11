@@ -26,9 +26,10 @@ app.middleware("http")(reject_break_glass_on_write)
 @app.on_event("startup")
 def on_startup() -> None:
     """
-    Create database tables on startup (DEV ONLY).
+    Create database tables on startup (SQLite dev only).
     """
-    Base.metadata.create_all(bind=engine)
+    if engine.dialect.name == "sqlite":
+        Base.metadata.create_all(bind=engine)
 
 
 # Register API v1

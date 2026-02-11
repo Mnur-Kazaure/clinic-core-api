@@ -33,6 +33,7 @@ class AccessLogService:
             break_glass=False,
             session_id=session_id,
             device_id=device_id,
+            extra_payload=None,
             commit=True,
         )
 
@@ -45,6 +46,7 @@ class AccessLogService:
         purpose_of_use: str,
         justification: str,
         resource: str,
+        extra_payload: dict | None = None,
         session_id: str | None = None,
         device_id: str | None = None,
     ) -> AccessLog:
@@ -59,6 +61,7 @@ class AccessLogService:
             break_glass=False,
             session_id=session_id,
             device_id=device_id,
+            extra_payload=extra_payload,
             commit=True,
         )
 
@@ -73,8 +76,9 @@ class AccessLogService:
         resource: str,
         session_id: str | None = None,
         device_id: str | None = None,
+        extra_payload: dict | None = None,
     ) -> AccessLog:
-        if actor.role not in {UserRole.DOCTOR, UserRole.CLINIC_ADMIN}:
+        if actor.role not in {UserRole.DOCTOR, UserRole.CLINIC_ADMIN, UserRole.RECEPTION}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Break-glass access denied",
@@ -91,8 +95,18 @@ class AccessLogService:
             break_glass=True,
             session_id=session_id,
             device_id=device_id,
+            extra_payload=extra_payload,
             commit=False,
         )
+        payload = {
+            "action": "BREAK_GLASS",
+            "purpose_of_use": purpose_value.value,
+            "justification": justification,
+            "resource": resource,
+            "access_log_id": str(log.id),
+        }
+        if extra_payload:
+            payload.update(extra_payload)
         self.event_service.build_event(
             event_type="BREAK_GLASS_USED",
             actor_id=actor.id,
@@ -100,13 +114,7 @@ class AccessLogService:
             clinic_id=clinic_id,
             patient_id=patient_id,
             emitter="access",
-            payload={
-                "action": "BREAK_GLASS",
-                "purpose_of_use": purpose_value.value,
-                "justification": justification,
-                "resource": resource,
-                "access_log_id": str(log.id),
-            },
+            payload=payload,
         )
         self.db.commit()
         self.db.refresh(log)
@@ -125,6 +133,7 @@ class AccessLogService:
         break_glass: bool,
         session_id: str | None,
         device_id: str | None,
+        extra_payload: dict | None,
         commit: bool,
     ) -> AccessLog:
         purpose_value = self._normalize_purpose(purpose_of_use)
@@ -164,6 +173,15 @@ class AccessLogService:
         )
         self.db.add(log)
         self.db.flush()
+        payload = {
+            "action": action,
+            "purpose_of_use": purpose_value.value,
+            "justification": justification,
+            "resource": resource,
+            "access_log_id": str(log.id),
+        }
+        if extra_payload:
+            payload.update(extra_payload)
         self.event_service.build_event(
             event_type="ACCESS_LOGGED",
             actor_id=actor.id,
@@ -171,18 +189,59 @@ class AccessLogService:
             clinic_id=clinic_id,
             patient_id=patient_id,
             emitter="access",
-            payload={
-                "action": action,
-                "purpose_of_use": purpose_value.value,
-                "justification": justification,
-                "resource": resource,
-                "access_log_id": str(log.id),
-            },
+            payload=payload,
         )
         if commit:
             self.db.commit()
             self.db.refresh(log)
         return log
+
+    def log_pmr_read(
+        self,
+        *,
+        actor,
+        clinic_id,
+        patient_id_requested,
+        patient_id_canonical,
+        purpose_of_use: str,
+        justification: str,
+        break_glass: bool,
+        session_id: str | None = None,
+        device_id: str | None = None,
+        extra_payload: dict | None = None,
+    ) -> AccessLog:
+        pmr_payload = {
+            "patient_id_requested": str(patient_id_requested),
+            "patient_id_canonical": str(patient_id_canonical),
+        }
+        if extra_payload:
+            pmr_payload.update(extra_payload)
+        if break_glass:
+            return self.log_break_glass(
+                actor=actor,
+                clinic_id=clinic_id,
+                patient_id=patient_id_canonical,
+                purpose_of_use=purpose_of_use,
+                justification=justification,
+                resource="PMR",
+                session_id=session_id,
+                device_id=device_id,
+                extra_payload=pmr_payload,
+            )
+        return self._log(
+            actor=actor,
+            clinic_id=clinic_id,
+            patient_id=patient_id_canonical,
+            action="CHART_READ",
+            purpose_of_use=purpose_of_use,
+            justification=justification,
+            resource="PMR",
+            break_glass=False,
+            session_id=session_id,
+            device_id=device_id,
+            extra_payload=pmr_payload,
+            commit=True,
+        )
 
     def _normalize_purpose(self, purpose_of_use: str | PurposeOfUse) -> PurposeOfUse:
         if isinstance(purpose_of_use, PurposeOfUse):

@@ -1,6 +1,7 @@
 import client from '@/api/client';
 import { ConsultationResponse } from '@/shared/types';
 import { jsonUtils } from '@/shared/utils/json';
+import { PurposeOfUse } from '@/shared/enums';
 
 export interface ConsultationCreateRequest {
   visit_id: string;
@@ -15,7 +16,7 @@ export interface ConsultationUpdateRequest {
 }
 
 export interface ConsultationFormData {
-  vitals?: Record<string, any>;
+  vitals?: Record<string, unknown>;
   presenting_complaints?: string;
   diagnosis?: string;
   notes?: string;
@@ -31,13 +32,34 @@ export const consultationService = {
   },
 
   async getConsultationByVisit(
-    visitId: string
+    visitId: string,
+    options?: {
+      purpose_of_use?: PurposeOfUse;
+      justification?: string;
+      break_glass?: boolean;
+    }
   ): Promise<ConsultationResponse | null> {
+    const purpose_of_use = options?.purpose_of_use ?? PurposeOfUse.TREATMENT;
+    const justification = options?.justification ?? 'Consultation access';
+    const break_glass = options?.break_glass ?? false;
     try {
-      const response = await client.get(`/v1/consultations/visit/${visitId}`);
+      const response = await client.get(
+        `/v1/consultations/visit/${visitId}`,
+        {
+          params: {
+            purpose_of_use,
+            justification,
+            break_glass,
+          },
+        }
+      );
       return response.data;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
+    } catch (error: unknown) {
+      const status =
+        typeof error === 'object' && error && 'response' in error
+          ? (error as { response?: { status?: number } }).response?.status
+          : null;
+      if (status === 404) {
         return null;
       }
       throw error;

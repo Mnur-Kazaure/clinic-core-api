@@ -6,6 +6,7 @@ import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { UserDTO } from '@/shared/types';
 import { Header } from '@/app/components/Header';
+import { clinicService } from '@/domains/clinic/services/clinicService';
 
 export default function PharmacyLayout({
   children,
@@ -18,6 +19,7 @@ export default function PharmacyLayout({
     'checking' | 'authorized' | 'unauthorized'
   >('checking');
   const [user, setUser] = useState<UserDTO | null>(null);
+  const [clinicName, setClinicName] = useState<string | null>(null);
 
   useEffect(() => {
     async function verifyAccess() {
@@ -42,6 +44,12 @@ export default function PharmacyLayout({
         }
 
         setUser(user);
+        try {
+          const profile = await clinicService.getProfile();
+          setClinicName(profile.name);
+        } catch {
+          setClinicName(null);
+        }
         setAuthStatus('authorized');
       } catch (error) {
         router.push('/confirm-access');
@@ -65,7 +73,13 @@ export default function PharmacyLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {user && <Header userRole={user.role} userName={user.full_name} />}
+      {user && (
+        <Header
+          userRole={user.role}
+          userName={user.full_name}
+          clinicName={clinicName}
+        />
+      )}
       <main className="p-6">{children}</main>
     </div>
   );

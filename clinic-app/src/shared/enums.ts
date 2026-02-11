@@ -4,6 +4,8 @@ export enum UserRole {
   DOCTOR = 'DOCTOR',
   LAB = 'LAB',
   PHARMACY = 'PHARMACY',
+  CHEW = 'CHEW',
+  MIDWIFE = 'MIDWIFE',
   ADMIN = 'ADMIN',
   CLINIC_ADMIN = 'CLINIC_ADMIN',
   SYSTEM = 'SYSTEM',
@@ -20,8 +22,28 @@ export enum VisitStatus {
   CANCELLED = 'CANCELLED',
 }
 
+export enum VisitServiceLine {
+  OPD = 'OPD',
+  ANC = 'ANC',
+  MATERNITY = 'MATERNITY',
+}
+
 export enum PrescriptionStatus {
   ISSUED = 'ISSUED',
   DISPENSED = 'DISPENSED',
   CANCELLED = 'CANCELLED',
+}
+
+export enum PrescriptionFulfillmentType {
+  DISPENSED_IN_HOUSE = 'DISPENSED_IN_HOUSE',
+  DISPENSED_EXTERNAL = 'DISPENSED_EXTERNAL',
+}
+
+export enum PurposeOfUse {
+  TREATMENT = 'TREATMENT',
+  OPERATIONS = 'OPERATIONS',
+  EMERGENCY = 'EMERGENCY',
+  AUDIT = 'AUDIT',
+  BILLING = 'BILLING',
+  SECURITY = 'SECURITY',
 }

@@ -7,6 +7,7 @@ import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { UserDTO } from '@/shared/types';
 import { Header } from '../components/Header';
+import { clinicService } from '@/domains/clinic/services/clinicService';
 
 export default function ReceptionLayout({
   children,
@@ -17,17 +18,15 @@ export default function ReceptionLayout({
   const pathname = usePathname();
   const [authStatus, setAuthStatus] = useState<'checking' | 'authorized' | 'unauthorized'>('checking');
   const [user, setUser] = useState<UserDTO | null>(null);
+  const [clinicName, setClinicName] = useState<string | null>(null);
 
   useEffect(() => {
     async function verifyAccess() {
       try {
-        console.log('🔐 [ReceptionLayout] Starting access verification...');
-        
         // 1. Authentication guard (returns user if authenticated)
         const { isAuthenticated, user } = await authGuard();
         
         if (!isAuthenticated || !user) {
-          console.log('🔐 [ReceptionLayout] Not authenticated, redirecting to login');
           router.push('/login');
           return;
         }
@@ -36,24 +35,23 @@ export default function ReceptionLayout({
         const redirectPath = roleContextGuard(user.role, pathname);
         
         if (redirectPath) {
-          console.log('🔐 [ReceptionLayout] Role mismatch, redirecting to:', redirectPath);
           router.push(redirectPath);
           return;
         }
 
         // 3. Ensure user is actually RECEPTION
         if (user.role !== 'RECEPTION') {
-          console.log('🔐 [ReceptionLayout] Wrong role, redirecting to confirm-access');
           router.push('/confirm-access');
           return;
         }
-
-        console.log('✅ [ReceptionLayout] Access authorized for user:', { 
-          id: user.id.substring(0, 8), 
-          role: user.role 
-        });
         
         setUser(user);
+        try {
+          const profile = await clinicService.getProfile();
+          setClinicName(profile.name);
+        } catch {
+          setClinicName(null);
+        }
         setAuthStatus('authorized');
       } catch (error: any) {
         console.error('❌ [ReceptionLayout] Access verification failed:', error);
@@ -80,7 +78,13 @@ export default function ReceptionLayout({
   // ✅ Pass user data down via props to children
   return (
     <div className="min-h-screen bg-gray-50">
-      {user && <Header userRole={user.role} userName={user.full_name} />}
+      {user && (
+        <Header
+          userRole={user.role}
+          userName={user.full_name}
+          clinicName={clinicName}
+        />
+      )}
       <main className="p-6">
         {/* Pass user as props to children via React.cloneElement */}
         {children}

@@ -1,3 +1,4 @@
+// clinic-app/src/app/admin/components/ClinicProfileForm.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -6,6 +7,7 @@ import { ClinicProfileResponse } from '@/shared/types';
 import { Card } from '@/shared/Card';
 import { Button } from '@/shared/Button';
 import { Input } from '@/shared/Input';
+import { Alert } from '@/shared/Alert';
 
 const emptyProfile: ClinicProfileResponse = {
   id: '',
@@ -42,7 +44,7 @@ export function ClinicProfileForm() {
           timezone: data.timezone || '',
           description: data.description || '',
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to load clinic profile:', err);
         setError('Unable to load clinic profile.');
       } finally {
@@ -62,12 +64,35 @@ export function ClinicProfileForm() {
       setSaving(true);
       setError(null);
       setSuccess(null);
-      const updated = await clinicService.updateProfile(formState);
+      const payload: ClinicProfileUpdateRequest = {};
+      const setIf = (
+        key: keyof ClinicProfileUpdateRequest,
+        value: ClinicProfileUpdateRequest[keyof ClinicProfileUpdateRequest]
+      ) => {
+        if (value === undefined || value === null) return;
+        if (typeof value === 'string' && value.trim() === '') return;
+        payload[key] = typeof value === 'string' ? value.trim() : value;
+      };
+
+      setIf('name', formState.name);
+      setIf('logo_url', formState.logo_url);
+      setIf('address', formState.address);
+      setIf('phone', formState.phone);
+      setIf('email', formState.email);
+      setIf('timezone', formState.timezone);
+      setIf('description', formState.description);
+
+      const updated = await clinicService.updateProfile(payload);
       setProfile(updated);
       setSuccess('Clinic profile updated successfully.');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to update clinic profile:', err);
-      setError(err.response?.data?.detail || 'Failed to update clinic profile.');
+      const detail =
+        typeof err === 'object' && err && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data
+              ?.detail
+          : undefined;
+      setError(detail || 'Failed to update clinic profile.');
     } finally {
       setSaving(false);
     }
@@ -75,7 +100,7 @@ export function ClinicProfileForm() {
 
   if (loading) {
     return (
-      <Card title="Clinic Profile" titleClassName="text-[#0B4DA2]">
+      <Card title="Clinic Profile" titleClassName="text-slate-900">
         <div className="space-y-4">
           <div className="animate-pulse h-6 bg-gray-200 rounded w-1/3"></div>
           <div className="animate-pulse h-10 bg-gray-200 rounded"></div>
@@ -86,18 +111,10 @@ export function ClinicProfileForm() {
   }
 
   return (
-    <Card title="Clinic Profile" titleClassName="text-[#0B4DA2]">
+    <Card title="Clinic Profile" titleClassName="text-slate-900">
       <div className="space-y-6">
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-700">
-            {success}
-          </div>
-        )}
+        {error && <Alert variant="error">{error}</Alert>}
+        {success && <Alert variant="success">{success}</Alert>}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input

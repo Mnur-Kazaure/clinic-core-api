@@ -1,7 +1,7 @@
 // /projects/clinic-monorepo/clinic-app/src/domains/clinic/services/clinicService.ts
 import client from '@/api/client';
 import { UserRole } from '@/shared/enums';
-import { ClinicProfileResponse, StaffResponse } from '@/shared/types';
+import { ClinicProfileResponse, ClinicRegistrationFeeResponse, StaffResponse } from '@/shared/types';
 
 export interface ClinicProfileUpdateRequest {
   name?: string;
@@ -10,6 +10,9 @@ export interface ClinicProfileUpdateRequest {
   phone?: string | null;
   email?: string | null;
   timezone?: string | null;
+  registration_fee_minor?: number | null;
+  registration_fee_required?: boolean;
+  monthly_revenue_target_minor?: number | null;
   description?: string | null;
 }
 
@@ -39,6 +42,11 @@ export const clinicService = {
     payload: ClinicProfileUpdateRequest
   ): Promise<ClinicProfileResponse> {
     const response = await client.patch('/v1/clinic/profile', payload);
+    return response.data;
+  },
+
+  async getRegistrationFee(): Promise<ClinicRegistrationFeeResponse> {
+    const response = await client.get('/v1/clinic/registration-fee');
     return response.data;
   },
 

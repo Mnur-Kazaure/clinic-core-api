@@ -10,6 +10,8 @@ VISIT_ACCESS_ROLES = {
     UserRole.DOCTOR,
     UserRole.LAB,
     UserRole.PHARMACY,
+    UserRole.CHEW,
+    UserRole.MIDWIFE,
     UserRole.ADMIN,
 }
 
@@ -45,6 +47,24 @@ def require_doctor(user=Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Doctor access required",
+        )
+    return user
+
+
+def require_chew(user=Depends(get_current_user)):
+    if user.role != UserRole.CHEW:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CHEW access required",
+        )
+    return user
+
+
+def require_midwife(user=Depends(get_current_user)):
+    if user.role != UserRole.MIDWIFE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Midwife access required",
         )
     return user
 

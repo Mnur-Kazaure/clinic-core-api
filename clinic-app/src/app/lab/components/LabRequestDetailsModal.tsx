@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { labService, LabRequest, LabResult } from '@/domains/lab/services/labService';
+import { visitService } from '@/domains/visit/services/visitService';
+import { PurposeOfUse } from '@/shared/enums';
+import { VisitResponse } from '@/shared/types';
 import { LabResultForm } from './LabResultForm';
 import { LabCompletionWorkflow } from './LabCompletionWorkflow';
 import { Card } from '@/shared/Card';
@@ -29,6 +32,9 @@ export function LabRequestDetailsModal({
   const [resultsLoading, setResultsLoading] = useState(false);
   const [resultsError, setResultsError] = useState<string | null>(null);
   const [resultsUpdatedAt, setResultsUpdatedAt] = useState<Date | null>(null);
+  const [visitDetails, setVisitDetails] = useState<VisitResponse | null>(null);
+  const [visitLoading, setVisitLoading] = useState(false);
+  const [visitError, setVisitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (request?.status === 'PENDING') {
@@ -42,7 +48,10 @@ export function LabRequestDetailsModal({
     try {
       setResultsLoading(true);
       setResultsError(null);
-      const data = await labService.getResults(activeRequest.id);
+      const data = await labService.getResults(activeRequest.id, {
+        purpose_of_use: PurposeOfUse.TREATMENT,
+        justification: 'Lab result review',
+      });
       setResults(data);
       setResultsUpdatedAt(new Date());
     } catch (error: any) {
@@ -55,9 +64,29 @@ export function LabRequestDetailsModal({
     }
   };
 
+  const loadVisit = async (activeRequest: LabRequest) => {
+    try {
+      setVisitLoading(true);
+      setVisitError(null);
+      const data = await visitService.getVisit(activeRequest.visit_id, {
+        purpose_of_use: PurposeOfUse.TREATMENT,
+        justification: 'Lab request review',
+      });
+      setVisitDetails(data);
+    } catch (error: any) {
+      console.error('Failed to load visit details:', error);
+      setVisitError(
+        error.response?.data?.detail || 'Failed to load visit details'
+      );
+    } finally {
+      setVisitLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && request) {
       loadResults(request);
+      loadVisit(request);
     }
   }, [isOpen, request]);
 
@@ -79,6 +108,14 @@ export function LabRequestDetailsModal({
     return colors[status] || 'text-gray-600 bg-gray-100';
   };
 
+  const maskId = (value?: string | null) =>
+    value ? `${value.substring(0, 6)}…${value.substring(value.length - 4)}` : '—';
+
+  const patientName =
+    visitDetails?.patient_name || request.patient_name || 'Unknown patient';
+  const patientMrn = visitDetails?.patient_mrn || request.patient_mrn;
+  const patientId = visitDetails?.patient_id || request.patient_id;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -97,9 +134,33 @@ export function LabRequestDetailsModal({
                   {request.status}
                 </span>
                 <span className="text-sm text-gray-500">
-                  ID: {request.id.substring(0, 12)}...
+                  Request ID: {maskId(request.id)}
                 </span>
               </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                <span className="font-medium text-gray-900">{patientName}</span>
+                <span className="text-gray-400">•</span>
+                <span>
+                  {patientMrn ? `MRN ${patientMrn}` : `ID: ${maskId(patientId)}`}
+                </span>
+                {visitDetails?.intake_emergency_flag && (
+                  <>
+                    <span className="text-gray-400">•</span>
+                    <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                      Emergency
+                    </span>
+                  </>
+                )}
+                {visitLoading && (
+                  <>
+                    <span className="text-gray-400">•</span>
+                    <span>Loading visit…</span>
+                  </>
+                )}
+              </div>
+              {visitError && (
+                <p className="mt-2 text-xs text-red-600">{visitError}</p>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -160,7 +221,49 @@ export function LabRequestDetailsModal({
           {activeTab === 'details' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card title="Request Information" titleClassName="text-[#0B4DA2]">
+                <Card title="Patient & Visit" titleClassName="text-[#0B4DA2]">
+                  <dl className="space-y-3">
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">
+                        Patient
+                      </dt>
+                      <dd className="text-sm text-gray-900">{patientName}</dd>
+                      <dd className="text-xs text-gray-500">
+                        {patientMrn ? `MRN ${patientMrn}` : `ID: ${maskId(patientId)}`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">
+                        Visit ID
+                      </dt>
+                      <dd className="text-sm text-gray-900">
+                        {maskId(request.visit_id)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">
+                        Completed At
+                      </dt>
+                      <dd className="text-sm text-gray-900">
+                        {request.completed_at
+                          ? new Date(request.completed_at).toLocaleString()
+                          : 'Not completed'}
+                      </dd>
+                    </div>
+                    {visitDetails?.intake_emergency_flag && (
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">
+                          Emergency Note
+                        </dt>
+                        <dd className="text-sm text-red-700">
+                          {visitDetails.intake_emergency_reason || 'Flagged'}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                </Card>
+
+                <Card title="Request Summary" titleClassName="text-[#0B4DA2]">
                   <dl className="space-y-3">
                     <div>
                       <dt className="text-sm font-medium text-gray-500">
@@ -189,8 +292,15 @@ export function LabRequestDetailsModal({
                         Requested By
                       </dt>
                       <dd className="text-sm text-gray-900">
-                        {request.requested_by.substring(0, 12)}...
+                        {request.requested_by_name
+                          ? request.requested_by_name
+                          : maskId(request.requested_by)}
                       </dd>
+                      {request.requested_by_role && (
+                        <dd className="text-xs text-gray-500">
+                          {request.requested_by_role}
+                        </dd>
+                      )}
                     </div>
                     <div>
                       <dt className="text-sm font-medium text-gray-500">
@@ -202,30 +312,15 @@ export function LabRequestDetailsModal({
                     </div>
                   </dl>
                 </Card>
-
-                <Card title="Visit Information" titleClassName="text-[#0B4DA2]">
-                  <dl className="space-y-3">
-                    <div>
-                      <dt className="text-sm font-medium text-gray-500">
-                        Visit ID
-                      </dt>
-                      <dd className="text-sm text-gray-900">
-                        {request.visit_id.substring(0, 12)}...
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm font-medium text-gray-500">
-                        Completed At
-                      </dt>
-                      <dd className="text-sm text-gray-900">
-                        {request.completed_at
-                          ? new Date(request.completed_at).toLocaleString()
-                          : 'Not completed'}
-                      </dd>
-                    </div>
-                  </dl>
-                </Card>
               </div>
+
+              <Card title="Clinical Instructions" titleClassName="text-[#0B4DA2]">
+                <div className="text-sm text-gray-700">
+                  {request.special_instructions
+                    ? request.special_instructions
+                    : 'No special instructions provided.'}
+                </div>
+              </Card>
 
               <Card title="Result History" titleClassName="text-[#0B4DA2]">
                 <div className="flex items-center justify-between mb-3">

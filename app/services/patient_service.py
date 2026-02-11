@@ -1,9 +1,13 @@
 # app/services/patient_service.py
+from fastapi import HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.models.clinic import Clinic
 from app.models.patient import Patient
 from app.schemas.patient import PatientCreateSchema
+from app.shared.enums import IdentityState
+from app.services.mrn_service import MRNService
 
 
 class PatientService:
@@ -18,6 +22,20 @@ class PatientService:
         Service assumes caller is already authorized.
         """
 
+        clinic = (
+            self.db.query(Clinic)
+            .filter(Clinic.id == current_user.clinic_id)
+            .first()
+        )
+        if not clinic:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Clinic not found",
+            )
+
+        # Registration payments are temporarily disabled until the clinic's payment workflow
+        # is finalized. Patient creation must not be blocked by fee configuration.
+
         patient = Patient(
             clinic_id=current_user.clinic_id,
             full_name=payload.full_name,
@@ -26,11 +44,26 @@ class PatientService:
             phone_number=payload.phone_number,
             address=payload.address,
             occupation=payload.occupation,
+            identity_state=payload.identity_state or IdentityState.VERIFIED,
+            created_reason=payload.created_reason,
         )
 
         self.db.add(patient)
-        self.db.commit()
-        self.db.refresh(patient)
+        try:
+            self.db.flush()
+            mrn = MRNService(self.db).issue_mrn_for_patient(
+                patient_id=patient.id,
+                clinic_id=current_user.clinic_id,
+                actor=current_user,
+                commit=False,
+            )
+
+            self.db.commit()
+            self.db.refresh(patient)
+            patient.patient_mrn = mrn.mrn
+        except Exception:
+            self.db.rollback()
+            raise
 
         return patient
 

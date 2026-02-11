@@ -5,6 +5,7 @@ import { UserRole } from '@/shared/enums';
 import { StaffResponse } from '@/shared/types';
 import { Button } from '@/shared/Button';
 import { Input } from '@/shared/Input';
+import { Alert } from '@/shared/Alert';
 
 interface StaffFormModalProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ const roleOptions = [
   UserRole.DOCTOR,
   UserRole.LAB,
   UserRole.PHARMACY,
+  UserRole.CHEW,
+  UserRole.MIDWIFE,
 ];
 
 const availabilityOptions = ['Available', 'On Call', 'Unavailable'];
@@ -63,6 +66,18 @@ export function StaffFormModal({
 
   useEffect(() => {
     if (!initialData) {
+      setForm({
+        full_name: '',
+        email: '',
+        password: '',
+        role: UserRole.RECEPTION,
+        is_active: true,
+        specialty: '',
+        department: '',
+        room_label: '',
+        availability_status: '',
+      });
+      setError(null);
       return;
     }
 
@@ -76,7 +91,8 @@ export function StaffFormModal({
       room_label: initialData.room_label || '',
       availability_status: initialData.availability_status || '',
     });
-  }, [initialData]);
+    setError(null);
+  }, [initialData, isOpen]);
 
   const handleChange = (field: keyof StaffFormPayload, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -121,11 +137,7 @@ export function StaffFormModal({
             </button>
           </div>
 
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          {error && <Alert variant="error" className="mb-4">{error}</Alert>}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input

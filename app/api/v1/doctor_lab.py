@@ -11,6 +11,7 @@ from app.core.guards.doctor_lab_guards import (
 from app.models.lab_request import LabRequest
 from app.models.lab_result import LabResult
 from app.models.visit import Visit
+from app.models.user import User
 from app.schemas.lab_request import LabRequestResponse
 from app.schemas.lab import LabResultResponse
 from app.services.access_log_service import AccessLogService
@@ -18,6 +19,18 @@ from app.shared.enums import PurposeOfUse
 
 
 router = APIRouter(prefix="/doctor", tags=["Doctor"])
+
+
+def _attach_requester_info(db, lab_requests: list[LabRequest]) -> None:
+    if not lab_requests:
+        return
+    requester_ids = {request.requested_by for request in lab_requests}
+    users = db.query(User).filter(User.id.in_(requester_ids)).all()
+    user_map = {user.id: user for user in users}
+    for request in lab_requests:
+        requester = user_map.get(request.requested_by)
+        request.requested_by_name = requester.full_name if requester else None
+        request.requested_by_role = requester.role if requester else None
 
 
 @router.get(
@@ -52,12 +65,14 @@ def list_lab_requests_for_visit(
             justification=justification,
             resource="LAB_REQUESTS",
         )
-    return (
+    lab_requests = (
         db.query(LabRequest)
         .filter(LabRequest.visit_id == visit_id)
         .order_by(LabRequest.created_at.desc())
         .all()
     )
+    _attach_requester_info(db, lab_requests)
+    return lab_requests
 
 
 @router.get(

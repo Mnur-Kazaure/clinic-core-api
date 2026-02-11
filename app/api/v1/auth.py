@@ -9,6 +9,7 @@ from app.core.auth.jwt import encode_access_token
 from app.models.user import User
 from app.schemas.auth import LoginRequest
 from app.core.auth import get_current_user
+from app.services.event_service import EventService
 from app.core.auth.service import AuthService
 from app.core.auth.repositories.sqlalchemy_refresh_token_repository import (
     SqlAlchemyRefreshTokenRepository,
@@ -49,6 +50,18 @@ def login(
 ):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):
+        if user:
+            EventService(db).emit(
+                event_type="LOGIN_FAILED",
+                actor_id=user.id,
+                actor_role=user.role,
+                clinic_id=user.clinic_id,
+                patient_id=None,
+                emitter="auth",
+                payload={
+                    "reason": "invalid_credentials",
+                },
+            )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     access_token = encode_access_token(

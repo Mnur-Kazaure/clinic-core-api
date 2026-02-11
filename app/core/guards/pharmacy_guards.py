@@ -48,11 +48,12 @@ def require_pharmacy_access(
             detail="Cross-clinic access denied",
         )
 
-    # 🔒 State guard (CORE RULE)
-    if visit.status != VisitStatus.PHARMACY_PENDING:
+    # Flexible workflow: pharmacy access is prescription-driven, not visit-status-driven.
+    # We only hard-block cancelled visits.
+    if visit.status == VisitStatus.CANCELLED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Pharmacy access denied. Visit is in state {visit.status}",
+            detail="Pharmacy access denied. Visit is CANCELLED",
         )
 
     return visit

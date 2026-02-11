@@ -4,8 +4,11 @@ export interface PatientResponse {
   clinic_id: string;
   full_name: string;
   date_of_birth: string; // "YYYY-MM-DD"
-  gender: 'MALE' | 'FEMALE';
+  gender: 'MALE' | 'FEMALE' | 'UNKNOWN';
   phone_number: string;
   address: string;
   occupation: string;
+  patient_mrn?: string | null;
+  identity_state?: 'PROVISIONAL' | 'VERIFIED' | 'MERGED' | 'SPLIT';
+  created_reason?: string | null;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { consultationService } from '@/domains/consultation/services/consultationService';
 import { ConsultationResponse } from '@/shared/types';
 import { jsonUtils } from '@/shared/utils/json';
@@ -13,6 +13,8 @@ interface ConsultationModalProps {
   visitSummary?: {
     patientName?: string | null;
     status?: string | null;
+    mrn?: string | null;
+    intakeEmergencyFlag?: boolean | null;
   };
   isOpen: boolean;
   onClose: () => void;
@@ -68,14 +70,39 @@ export function ConsultationModal({
   const [notes, setNotes] = useState('');
   const [doctorFullName, setDoctorFullName] = useState('');
   const [isCompleted, setIsCompleted] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && visitId) {
-      loadConsultation();
+  const [isDirty, setIsDirty] = useState(false);
+  const canStartConsultation =
+    !visitSummary?.status ||
+    ['IN_CONSULTATION', 'LAB_REQUESTED', 'LAB_COMPLETED', 'PHARMACY_PENDING'].includes(
+      visitSummary.status
+    );
+  const getErrorResponse = useCallback((err: unknown) => {
+    if (typeof err !== 'object' || err === null) {
+      return undefined;
     }
-  }, [isOpen, visitId]);
+    if ('response' in err) {
+      return (err as { response?: { status?: number; data?: { detail?: string } } })
+        .response;
+    }
+    return undefined;
+  }, []);
 
-  const loadConsultation = async () => {
+  const populateForm = useCallback((consultationData: ConsultationResponse) => {
+    const parsedVitals = jsonUtils.parseVitals(consultationData.vitals) || {};
+    setVitals(parsedVitals as Record<string, string>);
+
+    setPresentingComplaints(consultationData.presenting_complaints || '');
+    setDiagnosis(consultationData.diagnosis || '');
+    setNotes(consultationData.notes || '');
+    setDoctorFullName(consultationData.doctor_full_name || '');
+    setIsCompleted(consultationData.completed_at !== null);
+    setIsDirty(false);
+  }, []);
+
+  const loadConsultation = useCallback(async () => {
+    if (consultation && isDirty) {
+      return;
+    }
     if (existingConsultation) {
       setConsultation(existingConsultation);
       populateForm(existingConsultation);
@@ -97,35 +124,66 @@ export function ConsultationModal({
           onConsultationReady(visitId, data);
         }
       }
-    } catch (err: any) {
-      if (err.response?.status !== 404) {
+    } catch (err: unknown) {
+      const response = getErrorResponse(err);
+      if (response?.status !== 404) {
         console.error('Failed to load consultation:', err);
         setError('Unable to load consultation data');
       }
-      if (err.response?.status === 409) {
+      if (response?.status === 409) {
         setError('Visit must be in consultation before you can start notes.');
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    consultation,
+    isDirty,
+    existingConsultation,
+    getErrorResponse,
+    onConsultationReady,
+    populateForm,
+    visitId,
+  ]);
 
-  const populateForm = (consultationData: ConsultationResponse) => {
-    const parsedVitals = jsonUtils.parseVitals(consultationData.vitals) || {};
-    setVitals(parsedVitals as Record<string, string>);
+  const loadConsultationRef = useRef(loadConsultation);
 
-    setPresentingComplaints(consultationData.presenting_complaints || '');
-    setDiagnosis(consultationData.diagnosis || '');
-    setNotes(consultationData.notes || '');
-    setDoctorFullName(consultationData.doctor_full_name || '');
-    setIsCompleted(consultationData.completed_at !== null);
-  };
+  useEffect(() => {
+    loadConsultationRef.current = loadConsultation;
+  }, [loadConsultation]);
+
+  useEffect(() => {
+    if (isOpen && visitId) {
+      loadConsultationRef.current();
+    }
+  }, [isOpen, visitId]);
 
   const handleVitalChange = (key: string, value: string) => {
     setVitals((prev) => ({
       ...prev,
       [key]: value,
     }));
+    setIsDirty(true);
+  };
+
+  const getOrCreateConsultation = async () => {
+    const existing = await consultationService.getConsultationByVisit(visitId);
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await consultationService.startConsultation(visitId);
+    } catch (err: unknown) {
+      const response = getErrorResponse(err);
+      if (response?.status === 400 || response?.status === 409) {
+        const retry = await consultationService.getConsultationByVisit(visitId);
+        if (retry) {
+          return retry;
+        }
+      }
+      throw err;
+    }
   };
 
   const handleSave = async (complete = false) => {
@@ -165,6 +223,7 @@ export function ConsultationModal({
         );
 
         setConsultation(updated);
+        setIsDirty(false);
 
         if (complete) {
           const completed = await consultationService.completeConsultation(
@@ -178,16 +237,18 @@ export function ConsultationModal({
           }
         }
       } else {
-        const newConsultation = await consultationService.startConsultation(
-          visitId
-        );
+        const newConsultation = await getOrCreateConsultation();
         setConsultation(newConsultation);
+        if (onConsultationReady) {
+          onConsultationReady(visitId, newConsultation);
+        }
 
         const updated = await consultationService.updateConsultation(
           newConsultation.id,
           updateData
         );
         setConsultation(updated);
+        setIsDirty(false);
 
         if (complete) {
           const completed = await consultationService.completeConsultation(
@@ -201,15 +262,16 @@ export function ConsultationModal({
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to save consultation:', err);
-      if (err.response?.status === 403) {
+      const response = getErrorResponse(err);
+      if (response?.status === 403) {
         setError('You do not have permission to update this consultation');
-      } else if (err.response?.status === 400) {
-        setError(err.response.data.detail || 'Invalid consultation data');
-      } else if (err.response?.status === 404) {
+      } else if (response?.status === 400) {
+        setError(response?.data?.detail || 'Invalid consultation data');
+      } else if (response?.status === 404) {
         setError('Consultation or visit not found');
-      } else if (err.response?.status === 409) {
+      } else if (response?.status === 409) {
         setError('Cannot modify completed consultation');
       } else {
         setError('Failed to save consultation. Please try again.');
@@ -224,25 +286,29 @@ export function ConsultationModal({
       setSaving(true);
       setError(null);
 
-      const newConsultation = await consultationService.startConsultation(
-        visitId
-      );
+      if (!canStartConsultation) {
+        setError('Visit must be in consultation before you can start notes.');
+        return;
+      }
+
+      const newConsultation = await getOrCreateConsultation();
       setConsultation(newConsultation);
       if (onConsultationReady) {
         onConsultationReady(visitId, newConsultation);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to start consultation:', err);
-      if (err.response?.status === 403) {
+      const response = getErrorResponse(err);
+      if (response?.status === 403) {
         setError('You do not have permission to start consultation');
-      } else if (err.response?.status === 400) {
+      } else if (response?.status === 400) {
         setError(
-          err.response.data.detail ||
+          response?.data?.detail ||
             'Cannot start consultation for this visit status'
         );
-      } else if (err.response?.status === 409) {
+      } else if (response?.status === 409) {
         setError('Visit must be in consultation before you can start notes.');
-      } else if (err.response?.status === 404) {
+      } else if (response?.status === 404) {
         setError('Visit not found');
       } else {
         setError('Failed to start consultation. Please try again.');
@@ -250,6 +316,18 @@ export function ConsultationModal({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleClose = () => {
+    if (isDirty && !isCompleted && !saving) {
+      const confirmClose = window.confirm(
+        'You have unsaved changes. Close without saving?'
+      );
+      if (!confirmClose) {
+        return;
+      }
+    }
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -278,6 +356,22 @@ export function ConsultationModal({
                   </span>
                 )}
               </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                {visitSummary?.mrn ? (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                    MRN {visitSummary.mrn}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 font-medium text-slate-500">
+                    ID {visitId.substring(0, 6)}…{visitId.substring(visitId.length - 4)}
+                  </span>
+                )}
+                {visitSummary?.intakeEmergencyFlag && (
+                  <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
+                    Emergency flagged
+                  </span>
+                )}
+              </div>
               {isCompleted && (
                 <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#E6F4FB] text-[#0B4DA2] mt-1">
                   Consultation completed (read-only)
@@ -285,7 +379,7 @@ export function ConsultationModal({
               )}
             </div>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="text-gray-400 hover:text-gray-600 text-2xl"
             >
               ✕
@@ -327,10 +421,15 @@ export function ConsultationModal({
                   size="lg"
                   onClick={handleStartConsultation}
                   isLoading={saving}
-                  disabled={saving}
+                  disabled={saving || !canStartConsultation}
                 >
                   Start Consultation
                 </Button>
+                {!canStartConsultation && (
+                  <p className="mt-3 text-xs text-amber-700">
+                    Visit must be IN_CONSULTATION before you can start notes.
+                  </p>
+                )}
               </div>
             </Card>
           )}
@@ -338,14 +437,17 @@ export function ConsultationModal({
           {consultation && (
             <div className="space-y-6">
               <Card title="Attending Clinician">
-                <Input
-                  label="Doctor Full Name"
-                  value={doctorFullName}
-                  onChange={(e) => setDoctorFullName(e.target.value)}
-                  placeholder="Enter full name for clinical record"
-                  disabled={isCompleted || saving}
-                />
-              </Card>
+                  <Input
+                    label="Doctor Full Name"
+                    value={doctorFullName}
+                    onChange={(e) => {
+                      setDoctorFullName(e.target.value);
+                      setIsDirty(true);
+                    }}
+                    placeholder="Enter full name for clinical record"
+                    disabled={isCompleted || saving}
+                  />
+                </Card>
 
               <Card title="Vitals">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -375,7 +477,10 @@ export function ConsultationModal({
               <Card title="Presenting Complaints">
                 <textarea
                   value={presentingComplaints}
-                  onChange={(e) => setPresentingComplaints(e.target.value)}
+                  onChange={(e) => {
+                    setPresentingComplaints(e.target.value);
+                    setIsDirty(true);
+                  }}
                   placeholder="Describe the patient's chief complaints, symptoms, and history..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[100px]"
                   disabled={isCompleted || saving}
@@ -385,7 +490,10 @@ export function ConsultationModal({
               <Card title="Diagnosis">
                 <textarea
                   value={diagnosis}
-                  onChange={(e) => setDiagnosis(e.target.value)}
+                  onChange={(e) => {
+                    setDiagnosis(e.target.value);
+                    setIsDirty(true);
+                  }}
                   placeholder="Enter diagnosis, differential diagnosis, or clinical impression..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[80px]"
                   disabled={isCompleted || saving}
@@ -395,7 +503,10 @@ export function ConsultationModal({
               <Card title="Clinical Notes">
                 <textarea
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    setIsDirty(true);
+                  }}
                   placeholder="Additional clinical notes, observations, or follow-up instructions..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[120px]"
                   disabled={isCompleted || saving}
@@ -406,7 +517,7 @@ export function ConsultationModal({
                 <div className="flex space-x-3">
                   <Button
                     variant="secondary"
-                    onClick={onClose}
+                    onClick={handleClose}
                     disabled={saving}
                   >
                     Close

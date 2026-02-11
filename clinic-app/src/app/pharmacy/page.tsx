@@ -25,6 +25,9 @@ export default function PharmacyPage() {
   });
   const [statsLoading, setStatsLoading] = useState(true);
 
+  const maskId = (value?: string | null) =>
+    value ? `${value.slice(0, 8)}...` : '—';
+
   useEffect(() => {
     async function loadPharmacist() {
       try {
@@ -137,13 +140,6 @@ export default function PharmacyPage() {
               <Button
                 variant="secondary"
                 className="w-full justify-center"
-                onClick={() => window.open('/api-docs', '_blank')}
-              >
-                View API Docs
-              </Button>
-              <Button
-                variant="secondary"
-                className="w-full justify-center"
                 onClick={() => window.location.reload()}
               >
                 Reload Dashboard
@@ -156,7 +152,7 @@ export default function PharmacyPage() {
                   Pharmacist Info
                 </h3>
                 <div className="text-sm text-gray-600">
-                  <p>ID: {pharmacistId.substring(0, 12)}...</p>
+                  <p>ID: {maskId(pharmacistId)}</p>
                   <p className="mt-1">
                     Dispenses will be recorded under your ID
                   </p>

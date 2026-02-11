@@ -7,6 +7,7 @@ import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { UserDTO } from '@/shared/types';
 import { Header } from '../components/Header';
+import { clinicService } from '@/domains/clinic/services/clinicService';
 
 export default function DoctorLayout({
   children,
@@ -19,6 +20,7 @@ export default function DoctorLayout({
     'checking' | 'authorized' | 'unauthorized'
   >('checking');
   const [user, setUser] = useState<UserDTO | null>(null);
+  const [clinicName, setClinicName] = useState<string | null>(null);
 
   useEffect(() => {
     async function verifyAccess() {
@@ -43,6 +45,12 @@ export default function DoctorLayout({
         }
 
         setUser(user);
+        try {
+          const profile = await clinicService.getProfile();
+          setClinicName(profile.name);
+        } catch {
+          setClinicName(null);
+        }
         setAuthStatus('authorized');
       } catch (error) {
         router.push('/confirm-access');
@@ -66,7 +74,13 @@ export default function DoctorLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {user && <Header userRole={user.role} userName={user.full_name} />}
+      {user && (
+        <Header
+          userRole={user.role}
+          userName={user.full_name}
+          clinicName={clinicName}
+        />
+      )}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>

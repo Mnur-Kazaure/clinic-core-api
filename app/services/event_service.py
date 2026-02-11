@@ -4,6 +4,9 @@ from app.models.event_log import EventLog
 
 
 ALLOWED_EVENT_TYPES = {
+    "VISIT_REGISTERED",
+    "CONSULTATION_STARTED",
+    "LOGIN_FAILED",
     "PATIENT_CREATED",
     "PROVISIONAL_CREATED",
     "IDENTITY_VERIFIED",
@@ -41,6 +44,7 @@ EMITTER_EVENT_MAP = {
         "ENTRY_SIGNED",
         "ENTRY_AMENDED",
         "ENTRY_VOIDED",
+        "CONSULTATION_STARTED",
     },
     "lab": {
         "LAB_ORDERED",
@@ -64,6 +68,12 @@ EMITTER_EVENT_MAP = {
     "clinical_priority_service": {
         "PRIORITY_ESCALATED",
         "PRIORITY_DEESCALATED",
+    },
+    "visit": {
+        "VISIT_REGISTERED",
+    },
+    "auth": {
+        "LOGIN_FAILED",
     },
 }
 

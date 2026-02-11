@@ -67,6 +67,7 @@ export function LabRequestForm({
       const labRequest = await labRequestService.createLabRequest({
         visit_id: visitId,
         test_name: finalTestName,
+        special_instructions: instructions || undefined,
       });
 
       if (onSuccess) {

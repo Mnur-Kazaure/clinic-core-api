@@ -10,7 +10,11 @@ from app.models.admission import Admission
 from app.models.bed_assignment import BedAssignment
 from app.models.bed import Bed
 from app.models.patient import Patient
-from app.shared.enums import AdmissionStatus, AdmissionType
+from app.shared.enums import (
+    AdmissionStatus,
+    AdmissionType,
+    AdmissionDischargeDisposition,
+)
 from app.services.event_service import EventService
 from app.services.access_log_service import AccessLogService
 
@@ -94,7 +98,16 @@ class AdmissionService:
         )
         return admission
 
-    def discharge_admission(self, *, admission_id: UUID, actor) -> Admission:
+    def discharge_admission(
+        self,
+        *,
+        admission_id: UUID,
+        actor,
+        disposition: AdmissionDischargeDisposition = AdmissionDischargeDisposition.HOME,
+        transferred_to_facility: str | None = None,
+        death_pronounced_at: datetime | None = None,
+        discharge_notes: str | None = None,
+    ) -> Admission:
         admission = (
             self.db.query(Admission)
             .filter(Admission.id == admission_id)
@@ -107,8 +120,40 @@ class AdmissionService:
         if admission.status != AdmissionStatus.ACTIVE:
             raise HTTPException(status_code=409, detail="Admission not active")
 
+        if disposition == AdmissionDischargeDisposition.TRANSFERRED_OUT:
+            if not transferred_to_facility or len(transferred_to_facility.strip()) < 3:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="transferred_to_facility is required for TRANSFERRED_OUT",
+                )
+            if death_pronounced_at is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="death_pronounced_at must be null for TRANSFERRED_OUT",
+                )
+
+        if disposition == AdmissionDischargeDisposition.DECEASED:
+            if death_pronounced_at is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="death_pronounced_at is required for DECEASED",
+                )
+            if transferred_to_facility is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="transferred_to_facility must be null for DECEASED",
+                )
+
         admission.status = AdmissionStatus.DISCHARGED
         admission.discharged_at = datetime.now(timezone.utc)
+        admission.discharge_disposition = disposition
+        admission.transferred_to_facility = (
+            transferred_to_facility.strip()
+            if transferred_to_facility is not None
+            else None
+        )
+        admission.death_pronounced_at = death_pronounced_at
+        admission.discharge_notes = discharge_notes.strip() if discharge_notes else None
 
         # Auto-release active bed assignment
         active_assignment = (
@@ -147,6 +192,9 @@ class AdmissionService:
             payload={
                 "admission_id": str(admission.id),
                 "status": admission.status.value,
+                "disposition": admission.discharge_disposition.value if admission.discharge_disposition else None,
+                "transferred_to_facility": admission.transferred_to_facility,
+                "death_pronounced_at": admission.death_pronounced_at.isoformat() if admission.death_pronounced_at else None,
                 "discharged_at": admission.discharged_at.isoformat(),
                 "bed_release": bed_release_payload,
             },
@@ -175,6 +223,18 @@ class AdmissionService:
         admission.status = AdmissionStatus.CANCELLED
         admission.cancelled_at = datetime.now(timezone.utc)
         admission.cancel_reason = reason
+
+        # Auto-release active bed assignment (cancel can occur after bed assignment)
+        active_assignment = (
+            self.db.query(BedAssignment)
+            .filter(
+                BedAssignment.admission_id == admission.id,
+                BedAssignment.released_at.is_(None),
+            )
+            .first()
+        )
+        if active_assignment:
+            active_assignment.released_at = datetime.now(timezone.utc)
 
         self.db.commit()
         self.db.refresh(admission)

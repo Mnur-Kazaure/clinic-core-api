@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { userService, Doctor } from '@/domains/user/services/userService';
+import { UserRole } from '@/shared/enums';
 
 interface DoctorSelectionProps {
   value?: string;
@@ -9,6 +10,8 @@ interface DoctorSelectionProps {
   onSelectDoctor?: (doctor: Doctor | null) => void;
   disabled?: boolean;
   error?: string;
+  role?: UserRole;
+  label?: string;
 }
 
 export function DoctorSelection({
@@ -17,37 +20,48 @@ export function DoctorSelection({
   onSelectDoctor,
   disabled = false,
   error,
+  role = UserRole.DOCTOR,
+  label = 'Assign Doctor *',
 }: DoctorSelectionProps) {
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [staff, setStaff] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadDoctors() {
+    async function loadAssignableStaff() {
       try {
         setLoading(true);
         setLoadError(null);
-        const data = await userService.listDoctors();
-        setDoctors(data);
+        const data = await userService.listAssignableStaff();
+        setStaff(data);
       } catch (err: any) {
-        console.error('Failed to load doctors:', err);
-        setLoadError('Unable to load doctors. Please try again.');
+        console.error('Failed to load assignable staff:', err);
+        setLoadError('Unable to load assignable staff. Please try again.');
       } finally {
         setLoading(false);
       }
     }
 
-    loadDoctors();
+    loadAssignableStaff();
   }, []);
+
+  const roleKey = role;
+  const filteredStaff = staff.filter((member) => member.role === roleKey);
+  const roleLabel =
+    role === UserRole.CHEW
+      ? 'CHEW'
+      : role === UserRole.MIDWIFE
+      ? 'midwife'
+      : 'doctor';
 
   if (loading) {
     return (
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          Assign Doctor
+          {label}
         </label>
         <div className="animate-pulse h-10 bg-gray-200 rounded-md"></div>
-        <p className="text-sm text-gray-500">Loading available doctors...</p>
+        <p className="text-sm text-gray-500">Loading assignable staff...</p>
       </div>
     );
   }
@@ -56,7 +70,7 @@ export function DoctorSelection({
     return (
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          Assign Doctor
+          {label}
         </label>
         <div className="p-3 bg-red-50 border border-red-200 rounded-md">
           <p className="text-sm text-red-600">{loadError}</p>
@@ -71,35 +85,35 @@ export function DoctorSelection({
     );
   }
 
-  if (doctors.length === 0) {
+  if (filteredStaff.length === 0) {
     return (
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          Assign Doctor
+          {label}
         </label>
         <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
           <p className="text-sm text-yellow-700">
-            No doctors available in this clinic. Contact administrator.
+            No active {roleLabel} found in this clinic. Contact administrator.
           </p>
         </div>
       </div>
     );
   }
 
-  const formatDoctorLabel = (doctor: Doctor) => {
-    const name = doctor.full_name || 'Unnamed Doctor';
-    const specialty = doctor.specialty ? ` • ${doctor.specialty}` : '';
-    const department = doctor.department ? ` (${doctor.department})` : '';
+  const formatStaffLabel = (member: Doctor) => {
+    const name = member.full_name || 'Unnamed Staff';
+    const specialty = member.specialty ? ` • ${member.specialty}` : '';
+    const department = member.department ? ` (${member.department})` : '';
     return `${name}${specialty}${department}`;
   };
 
-  const selectedDoctor =
-    doctors.find((doctor) => doctor.id === value) || null;
+  const selectedStaff =
+    filteredStaff.find((member) => member.id === value) || null;
 
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium text-gray-700">
-        Assign Doctor *
+        {label}
       </label>
       <select
         value={value || ''}
@@ -107,7 +121,7 @@ export function DoctorSelection({
           const doctorId = e.target.value;
           onChange(doctorId);
           if (onSelectDoctor) {
-            const selected = doctors.find((doctor) => doctor.id === doctorId);
+            const selected = filteredStaff.find((member) => member.id === doctorId);
             onSelectDoctor(selected || null);
           }
         }}
@@ -119,37 +133,37 @@ export function DoctorSelection({
           ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}
         `}
       >
-        <option value="">Select a doctor</option>
-        {doctors.map((doctor) => (
-          <option key={doctor.id} value={doctor.id}>
-            {formatDoctorLabel(doctor)}
+        <option value="">Select a {roleLabel}</option>
+        {filteredStaff.map((member) => (
+          <option key={member.id} value={member.id}>
+            {formatStaffLabel(member)}
           </option>
         ))}
       </select>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {selectedDoctor && (
+      {selectedStaff && (
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
           <p className="font-semibold text-slate-900">
-            {selectedDoctor.full_name || 'Unnamed Doctor'}
+            {selectedStaff.full_name || 'Unnamed Staff'}
           </p>
-          {selectedDoctor.specialty && (
-            <p>{selectedDoctor.specialty}</p>
+          {selectedStaff.specialty && (
+            <p>{selectedStaff.specialty}</p>
           )}
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-            {selectedDoctor.department && (
-              <span>Dept: {selectedDoctor.department}</span>
+            {selectedStaff.department && (
+              <span>Dept: {selectedStaff.department}</span>
             )}
-            {selectedDoctor.room_label && (
-              <span>Room: {selectedDoctor.room_label}</span>
+            {selectedStaff.room_label && (
+              <span>Room: {selectedStaff.room_label}</span>
             )}
-            {selectedDoctor.availability_status && (
-              <span>Status: {selectedDoctor.availability_status}</span>
+            {selectedStaff.availability_status && (
+              <span>Status: {selectedStaff.availability_status}</span>
             )}
           </div>
         </div>
       )}
       <p className="text-xs text-gray-500">
-        {doctors.length} doctor(s) available
+        {filteredStaff.length} of {staff.length} active assignable staff shown
       </p>
     </div>
   );
