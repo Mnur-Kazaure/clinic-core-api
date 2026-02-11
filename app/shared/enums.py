@@ -19,11 +19,34 @@ class VisitStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class VisitServiceLine(str, Enum):
+    OPD = "OPD"
+    ANC = "ANC"
+    MATERNITY = "MATERNITY"
+
+
+class VisitOverrideReasonCode(str, Enum):
+    PATIENT_LEFT = "PATIENT_LEFT"
+    REFERRED_OUT = "REFERRED_OUT"
+    NO_LAB_REAGENTS = "NO_LAB_REAGENTS"
+    DRUG_OUT_OF_STOCK_EXTERNAL_PURCHASE = "DRUG_OUT_OF_STOCK_EXTERNAL_PURCHASE"
+    EQUIPMENT_DOWN = "EQUIPMENT_DOWN"
+    AFTER_HOURS = "AFTER_HOURS"
+    PAYMENT_ISSUE = "PAYMENT_ISSUE"
+    SYSTEM_OUTAGE = "SYSTEM_OUTAGE"
+    DOCUMENTATION_PENDING = "DOCUMENTATION_PENDING"
+    OTHER = "OTHER"
+
+
 class UserRole(str, Enum):
     RECEPTION = "RECEPTION"
     DOCTOR = "DOCTOR"
     LAB = "LAB"
     PHARMACY = "PHARMACY"
+    # Community Health Extension Worker (often runs ANC clinic in PHC settings)
+    CHEW = "CHEW"
+    # Midwife (maternity / labour & delivery workflows)
+    MIDWIFE = "MIDWIFE"
     ADMIN = "ADMIN"
     # 🔒 Non-human actor
     SYSTEM = "SYSTEM"
@@ -43,6 +66,11 @@ class PrescriptionStatus(str, Enum):
     DISPENSED = "DISPENSED"
     CANCELLED = "CANCELLED"
 
+
+
+class PrescriptionFulfillmentType(str, Enum):
+    DISPENSED_IN_HOUSE = "DISPENSED_IN_HOUSE"
+    DISPENSED_EXTERNAL = "DISPENSED_EXTERNAL"
 
 
 class Gender(str, enum.Enum):
@@ -108,6 +136,7 @@ class BillingEntryType(str, Enum):
 
 
 class BillingReasonCode(str, Enum):
+    REGISTRATION_FEE = "REGISTRATION_FEE"
     SERVICE = "SERVICE"
     LAB_TEST = "LAB_TEST"
     MEDICATION = "MEDICATION"
@@ -124,6 +153,14 @@ class BillingReasonCode(str, Enum):
     OTHER = "OTHER"
 
 # ------------------------------
+# PMR / MRN
+# ------------------------------
+
+class MRNStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    RETIRED = "RETIRED"
+
+# ------------------------------
 # Admissions / Beds
 # ------------------------------
 
@@ -135,6 +172,20 @@ class AdmissionType(str, Enum):
 class AdmissionStatus(str, Enum):
     ACTIVE = "ACTIVE"
     DISCHARGED = "DISCHARGED"
+    CANCELLED = "CANCELLED"
+
+class AdmissionDischargeDisposition(str, Enum):
+    HOME = "HOME"
+    TRANSFERRED_OUT = "TRANSFERRED_OUT"
+    DECEASED = "DECEASED"
+    LAMA = "LAMA"  # Left against medical advice
+    ELOPED = "ELOPED"  # Left without notice / absconded
+    OTHER = "OTHER"
+
+class AdmissionRequestStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
 
 
@@ -155,6 +206,48 @@ class BedStatus(str, Enum):
 class BedAssignmentType(str, Enum):
     ASSIGN = "ASSIGN"
     TRANSFER = "TRANSFER"
+
+# ------------------------------
+# ANC / Maternity
+# ------------------------------
+
+class PregnancyEpisodeStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    CLOSED = "CLOSED"
+
+
+class DeliveryMode(str, Enum):
+    SVD = "SVD"
+    C_SECTION = "C_SECTION"
+    ASSISTED = "ASSISTED"
+    UNKNOWN = "UNKNOWN"
+
+
+class DeliveryOutcome(str, Enum):
+    LIVE_BIRTH = "LIVE_BIRTH"
+    STILLBIRTH = "STILLBIRTH"
+    NEONATAL_DEATH = "NEONATAL_DEATH"
+    UNKNOWN = "UNKNOWN"
+
+
+class BabySex(str, Enum):
+    MALE = "MALE"
+    FEMALE = "FEMALE"
+    UNKNOWN = "UNKNOWN"
+
+
+class PostnatalSubject(str, Enum):
+    MOTHER = "MOTHER"
+    BABY = "BABY"
+
+
+class FamilyPlanningCommodity(str, Enum):
+    IMPLANT = "IMPLANT"
+    IUD = "IUD"
+    INJECTABLE = "INJECTABLE"
+    PILL = "PILL"
+    CONDOM = "CONDOM"
+    OTHER = "OTHER"
 
 # ------------------------------
 # Clinical Priority
