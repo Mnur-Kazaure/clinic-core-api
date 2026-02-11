@@ -120,7 +120,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
-        run: pnpm --filter ./clinic-app exec playwright install --with-deps chromium
+        run: pnpm --dir clinic-app exec playwright install --with-deps chromium
 
       - name: Start backend
         run: |
@@ -129,7 +129,7 @@ jobs:
 
       - name: Start frontend
         run: |
-          nohup pnpm --filter ./clinic-app dev -- --hostname 0.0.0.0 --port 3000 > /tmp/frontend.log 2>&1 &
+          nohup pnpm --dir clinic-app dev -- --hostname 0.0.0.0 --port 3000 > /tmp/frontend.log 2>&1 &
           echo $! > /tmp/frontend.pid
 
       - name: Wait for services
@@ -146,7 +146,7 @@ jobs:
           curl -sf http://localhost:3000 >/dev/null
 
       - name: Run ANC export role-matrix smoke
-        run: pnpm --filter ./clinic-app exec playwright test e2e/anc-export-role-matrix.spec.ts
+        run: pnpm --dir clinic-app exec playwright test e2e/anc-export-role-matrix.spec.ts
 
       - name: Upload Playwright artifacts
         if: always()
