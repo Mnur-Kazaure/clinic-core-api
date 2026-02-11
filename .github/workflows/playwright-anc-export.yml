@@ -83,6 +83,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install alembic psycopg2-binary pytest
+          # Keep passlib+bcrypt on a known-compatible combo in CI.
+          pip install --upgrade --force-reinstall "passlib[bcrypt]==1.7.4" "bcrypt==4.0.1"
 
       - name: Validate e2e secrets
         run: |
@@ -129,7 +131,7 @@ jobs:
 
       - name: Start frontend
         run: |
-          nohup pnpm --dir clinic-app dev -- --hostname 0.0.0.0 --port 3000 > /tmp/frontend.log 2>&1 &
+          nohup pnpm --dir clinic-app dev --hostname 0.0.0.0 --port 3000 > /tmp/frontend.log 2>&1 &
           echo $! > /tmp/frontend.pid
 
       - name: Wait for services
