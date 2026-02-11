@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import argparse
 
-from app.core.auth.passwords import hash_password
+import bcrypt
+
 from app.core.database import SessionLocal
 from app.models.clinic import Clinic
 from app.models.user import User
@@ -38,7 +39,7 @@ def _upsert_user(
     role_value: str,
 ) -> None:
     user = db.query(User).filter(User.email == email).first()
-    password_hash = hash_password(password)
+    password_hash = _hash_password(password)
     if user:
         user.clinic_id = clinic_id
         user.full_name = full_name
@@ -57,6 +58,12 @@ def _upsert_user(
             is_active=True,
         )
         )
+
+
+def _hash_password(password: str) -> str:
+    # Keep seeding independent from passlib backend quirks in CI.
+    truncated = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(truncated, bcrypt.gensalt()).decode("utf-8")
 
 
 def _resolve_role_value(primary: str, fallback: str) -> str:

@@ -404,9 +404,14 @@ export default function ANCPage() {
       const blobUrl = window.URL.createObjectURL(pdfBlob);
       const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer');
       if (!opened) {
-        setExportError('Popup blocked. Please allow popups and retry.');
-        window.URL.revokeObjectURL(blobUrl);
-        return;
+        // Headless/locked-down browsers may block window.open; fall back to download.
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `anc-export-${episode.id}.pdf`;
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
       setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
       setShowExportModal(false);
