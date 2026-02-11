@@ -35,14 +35,14 @@ def _upsert_user(
     email: str,
     password: str,
     full_name: str,
-    role: UserRole,
+    role_value: str,
 ) -> None:
     user = db.query(User).filter(User.email == email).first()
     password_hash = hash_password(password)
     if user:
         user.clinic_id = clinic_id
         user.full_name = full_name
-        user.role = role.value
+        user.role = role_value
         user.password_hash = password_hash
         user.is_active = True
         return
@@ -53,10 +53,18 @@ def _upsert_user(
             email=email,
             password_hash=password_hash,
             full_name=full_name,
-            role=role.value,
+            role=role_value,
             is_active=True,
         )
-    )
+        )
+
+
+def _resolve_role_value(primary: str, fallback: str) -> str:
+    """Use newer role when available, otherwise fall back for older branches."""
+    role = getattr(UserRole, primary, None)
+    if role is not None:
+        return role.value
+    return getattr(UserRole, fallback).value
 
 
 def main() -> None:
@@ -75,23 +83,25 @@ def main() -> None:
             email=args.reception_email,
             password=args.reception_password,
             full_name="E2E Reception",
-            role=UserRole.RECEPTION,
+            role_value=UserRole.RECEPTION.value,
         )
+        chew_role_value = _resolve_role_value("CHEW", "DOCTOR")
         _upsert_user(
             db,
             clinic_id=clinic.id,
             email=args.chew_email,
             password=args.chew_password,
             full_name="E2E CHEW",
-            role=UserRole.CHEW,
+            role_value=chew_role_value,
         )
+        midwife_role_value = _resolve_role_value("MIDWIFE", "LAB")
         _upsert_user(
             db,
             clinic_id=clinic.id,
             email=args.midwife_email,
             password=args.midwife_password,
             full_name="E2E Midwife",
-            role=UserRole.MIDWIFE,
+            role_value=midwife_role_value,
         )
 
         db.commit()
