@@ -150,7 +150,7 @@ jobs:
 
       - name: Run ANC export role-matrix smoke
         working-directory: clinic-app
-        run: pnpm dlx playwright@1.58.2 test e2e/anc-export-role-matrix.spec.ts
+        run: pnpm dlx playwright@1.58.2 test anc-export-role-matrix.spec.ts
 
       - name: Upload Playwright artifacts
         if: always()
