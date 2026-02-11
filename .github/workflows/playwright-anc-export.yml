@@ -119,6 +119,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install frontend dependencies
+        working-directory: clinic-app
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
