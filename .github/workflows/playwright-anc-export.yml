@@ -98,7 +98,7 @@ jobs:
 
       - name: Seed Playwright users
         run: |
-          python scripts/seed_playwright_users.py \
+          PYTHONPATH=. python scripts/seed_playwright_users.py \
             --reception-email "$E2E_RECEPTION_EMAIL" \
             --reception-password "$E2E_RECEPTION_PASSWORD" \
             --chew-email "$E2E_CHEW_EMAIL" \
