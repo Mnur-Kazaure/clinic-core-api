@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - develop
     paths:
       - ".github/workflows/playwright-anc-export.yml"
       - "clinic-app/**"
@@ -17,6 +18,7 @@ on:
   pull_request:
     branches:
       - main
+      - develop
     paths:
       - ".github/workflows/playwright-anc-export.yml"
       - "clinic-app/**"
