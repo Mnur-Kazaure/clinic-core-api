@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import get_db
 from app.core.guards.bed_guards import require_bed_management_role
-from app.models.ward import Ward
 from app.schemas.ward import WardCreateRequest, WardResponse
 
 
@@ -34,13 +33,11 @@ def create_ward(
     db=Depends(get_db),
     user=Depends(require_bed_management_role),
 ):
-    ward = Ward(
+    from app.services.bed_service import BedService
+
+    service = BedService(db)
+    return service.create_ward(
         clinic_id=user.clinic_id,
         name=payload.name,
         ward_type=payload.ward_type,
-        active=True,
     )
-    db.add(ward)
-    db.commit()
-    db.refresh(ward)
-    return ward

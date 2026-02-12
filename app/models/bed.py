@@ -23,6 +23,12 @@ class Bed(Base):
 
     __table_args__ = (
         UniqueConstraint("id", "clinic_id", name="uq_beds_id_clinic"),
+        UniqueConstraint(
+            "clinic_id",
+            "ward_id",
+            "bed_label",
+            name="uq_beds_clinic_ward_label",
+        ),
         ForeignKeyConstraint(
             ["ward_id", "clinic_id"],
             ["wards.id", "wards.clinic_id"],

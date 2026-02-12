@@ -11,7 +11,7 @@ from app.models.admission import Admission
 from app.models.bed import Bed
 from app.models.bed_assignment import BedAssignment
 from app.models.ward import Ward
-from app.shared.enums import AdmissionStatus, BedAssignmentType, BedStatus
+from app.shared.enums import AdmissionStatus, BedAssignmentType, BedStatus, WardType
 from app.services.event_service import EventService
 from app.services.access_log_service import AccessLogService
 
@@ -70,6 +70,97 @@ class BedService:
 
         return query.order_by(Bed.bed_label.asc()).all()
 
+    def create_ward(
+        self,
+        *,
+        clinic_id: UUID,
+        name: str,
+        ward_type: WardType,
+    ) -> Ward:
+        existing = (
+            self.db.query(Ward.id)
+            .filter(
+                Ward.clinic_id == clinic_id,
+                Ward.name == name,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ward name already exists in clinic",
+            )
+
+        ward = Ward(
+            clinic_id=clinic_id,
+            name=name,
+            ward_type=ward_type,
+            active=True,
+        )
+        self.db.add(ward)
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ward name already exists in clinic",
+            )
+        self.db.refresh(ward)
+        return ward
+
+    def create_bed(
+        self,
+        *,
+        clinic_id: UUID,
+        ward_id: UUID,
+        bed_label: str,
+        status_value: BedStatus,
+    ) -> Bed:
+        ward = (
+            self.db.query(Ward)
+            .filter(Ward.id == ward_id)
+            .first()
+        )
+        if not ward:
+            raise HTTPException(status_code=404, detail="Ward not found")
+        if ward.clinic_id != clinic_id:
+            raise HTTPException(status_code=403, detail="Cross-clinic access denied")
+
+        existing = (
+            self.db.query(Bed.id)
+            .filter(
+                Bed.clinic_id == clinic_id,
+                Bed.ward_id == ward_id,
+                Bed.bed_label == bed_label,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Bed label already exists in ward",
+            )
+
+        bed = Bed(
+            clinic_id=clinic_id,
+            ward_id=ward_id,
+            bed_label=bed_label,
+            status=status_value,
+            active=True,
+        )
+        self.db.add(bed)
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Bed label already exists in ward",
+            )
+        self.db.refresh(bed)
+        return bed
+
     def assign_bed(
         self,
         *,
@@ -79,7 +170,6 @@ class BedService:
         reason: str | None = None,
         break_glass: bool = False,
         purpose_of_use: str | None = None,
-        break_glass_reason: str | None = None,
     ) -> BedAssignment:
         admission = (
             self.db.query(Admission)
@@ -171,7 +261,6 @@ class BedService:
         reason: str,
         break_glass: bool = False,
         purpose_of_use: str | None = None,
-        break_glass_reason: str | None = None,
     ) -> BedAssignment:
         admission = (
             self.db.query(Admission)
@@ -213,6 +302,11 @@ class BedService:
         )
         if not current:
             raise HTTPException(status_code=409, detail="No active bed assignment")
+        if current.bed_id == new_bed.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Transfer target must differ from current bed",
+            )
 
         current.released_at = datetime.now(timezone.utc)
         old_bed = (

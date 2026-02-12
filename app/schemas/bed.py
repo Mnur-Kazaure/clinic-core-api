@@ -28,7 +28,6 @@ class BedAssignRequest(BaseModel):
     reason: str | None = None
     break_glass: bool = False
     purpose_of_use: str | None = None
-    break_glass_reason: str | None = None
 
 
 class BedTransferRequest(BaseModel):
@@ -37,4 +36,3 @@ class BedTransferRequest(BaseModel):
     reason: str = Field(..., min_length=3)
     break_glass: bool = False
     purpose_of_use: str | None = None
-    break_glass_reason: str | None = None
