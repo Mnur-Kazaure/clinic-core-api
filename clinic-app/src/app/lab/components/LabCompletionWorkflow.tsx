@@ -1,7 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { labService } from '@/domains/lab/services/labService';
+import {
+  labService,
+  LabCompletionResponse,
+} from '@/domains/lab/services/labService';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
 
@@ -9,6 +12,7 @@ interface LabCompletionWorkflowProps {
   requestId: string;
   visitId: string;
   testName: string;
+  hasRecordedResults?: boolean;
   onSuccess?: () => void;
   onCancel?: () => void;
 }
@@ -26,14 +30,24 @@ export function LabCompletionWorkflow({
   requestId,
   visitId,
   testName,
+  hasRecordedResults = true,
   onSuccess,
   onCancel,
 }: LabCompletionWorkflowProps) {
   const [step, setStep] = useState<CompletionStep>('CONFIRM');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [completionData, setCompletionData] = useState<any>(null);
+  const [completionData, setCompletionData] =
+    useState<LabCompletionResponse | null>(null);
   const [visitTransitioned, setVisitTransitioned] = useState(false);
+
+  const getErrorDetail = (err: unknown): string | null => {
+    if (typeof err !== 'object' || err === null || !('response' in err)) {
+      return null;
+    }
+    return (err as { response?: { data?: { detail?: string } } }).response?.data
+      ?.detail || null;
+  };
 
   const handleCompleteLabRequest = async () => {
     try {
@@ -50,9 +64,9 @@ export function LabCompletionWorkflow({
       } else {
         setStep('DONE');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Lab completion failed:', err);
-      setError(err.response?.data?.detail || 'Failed to complete lab request');
+      setError(getErrorDetail(err) || 'Failed to complete lab request');
     } finally {
       setIsProcessing(false);
     }
@@ -66,9 +80,9 @@ export function LabCompletionWorkflow({
       await labService.completeVisitLab(visitId);
       setVisitTransitioned(true);
       setStep('DONE');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Visit transition failed:', err);
-      setError(err.response?.data?.detail || 'Failed to update visit status');
+      setError(getErrorDetail(err) || 'Failed to update visit status');
     } finally {
       setIsProcessing(false);
     }
@@ -141,6 +155,14 @@ export function LabCompletionWorkflow({
 
         {step === 'CONFIRM' && (
           <div className="space-y-6">
+            {!hasRecordedResults && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-red-700 text-sm">
+                  At least one result must be recorded before completing this
+                  lab request.
+                </p>
+              </div>
+            )}
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
               <p className="text-yellow-800 font-medium">Important Notice</p>
               <p className="text-yellow-700 text-sm mt-1">
@@ -186,7 +208,7 @@ export function LabCompletionWorkflow({
                 variant="primary"
                 onClick={handleCompleteLabRequest}
                 isLoading={isProcessing}
-                disabled={isProcessing}
+                disabled={isProcessing || !hasRecordedResults}
               >
                 Start Completion
               </Button>

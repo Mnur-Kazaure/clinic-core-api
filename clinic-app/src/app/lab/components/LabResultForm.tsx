@@ -10,9 +10,9 @@ import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
 
 const labResultSchema = z.object({
-  result_value: z.string().min(1, 'Result value is required'),
-  result_unit: z.string().min(1, 'Unit is required'),
-  reference_range: z.string().min(1, 'Reference range is required'),
+  result_value: z.string().trim().min(1, 'Result value is required'),
+  result_unit: z.string().optional(),
+  reference_range: z.string().optional(),
 });
 
 type LabResultFormData = z.infer<typeof labResultSchema>;
@@ -45,13 +45,46 @@ export function LabResultForm({
     resolver: zodResolver(labResultSchema),
   });
 
+  const isQualitativeTest = /hiv|hepatitis|hbsag|hcv|vdrl|pregnancy|mrdt|widal|h\.?\s*pylori|blood grouping|sickling|urinalysis|urine microscopy|stool microscopy|sputum afb/i.test(
+    testName
+  );
+
+  const normalizeOptional = (value?: string) => {
+    const trimmed = (value || '').trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
+
+  const getErrorDetail = (err: unknown): string | null => {
+    if (typeof err !== 'object' || err === null || !('response' in err)) {
+      return null;
+    }
+    return (err as { response?: { data?: { detail?: string } } }).response?.data
+      ?.detail || null;
+  };
+
+  const getStatusCode = (err: unknown): number | undefined => {
+    if (typeof err !== 'object' || err === null || !('response' in err)) {
+      return undefined;
+    }
+    return (err as { response?: { status?: number } }).response?.status;
+  };
+
   const onSubmit = async (data: LabResultFormData) => {
+    const normalizedUnit = normalizeOptional(data.result_unit);
+    const normalizedReferenceRange = normalizeOptional(data.reference_range);
+    if (!isQualitativeTest && (!normalizedUnit || !normalizedReferenceRange)) {
+      setError('Unit and reference range are required for quantitative tests.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setError(null);
 
       const payload: LabResultCreate = {
-        ...data,
+        result_value: data.result_value.trim(),
+        result_unit: normalizedUnit,
+        reference_range: normalizedReferenceRange,
         technician_id: technicianId,
       };
 
@@ -67,18 +100,17 @@ export function LabResultForm({
       setTimeout(() => {
         setSuccess(false);
       }, 3000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to record results:', err);
+      const statusCode = getStatusCode(err);
+      const detail = getErrorDetail(err);
 
-      if (err.response?.status === 409) {
+      if (statusCode === 409) {
         setError(
           'This lab request has already been completed. Cannot record new results.'
         );
       } else {
-        setError(
-          err.response?.data?.detail ||
-            'Failed to record results. Please try again.'
-        );
+        setError(detail || 'Failed to record results. Please try again.');
       }
     } finally {
       setIsSubmitting(false);
@@ -125,57 +157,53 @@ export function LabResultForm({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Unit
+              Unit {isQualitativeTest ? '(optional)' : '*'}
             </label>
             <select
               {...register('result_unit')}
               className={`
                 w-full px-3 py-2 border rounded-md shadow-sm
                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                ${errors.result_unit ? 'border-red-300' : 'border-gray-300'}
+                border-gray-300
               `}
             >
-              <option value="">Select unit</option>
+              <option value="">{isQualitativeTest ? 'Not applicable' : 'Select unit'}</option>
               {commonUnits.map((unit) => (
                 <option key={unit} value={unit}>
                   {unit}
                 </option>
               ))}
             </select>
-            {errors.result_unit && (
-              <p className="mt-1 text-sm text-red-600">
-                {errors.result_unit.message}
-              </p>
-            )}
           </div>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Reference Range
+            Reference Range {isQualitativeTest ? '(optional)' : '*'}
           </label>
           <select
             {...register('reference_range')}
             className={`
               w-full px-3 py-2 border rounded-md shadow-sm
               focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-              ${errors.reference_range ? 'border-red-300' : 'border-gray-300'}
+              border-gray-300
             `}
           >
-            <option value="">Select reference range</option>
+            <option value="">
+              {isQualitativeTest
+                ? 'Not applicable'
+                : 'Select reference range'}
+            </option>
             {commonRanges.map((range) => (
               <option key={range} value={range}>
                 {range}
               </option>
             ))}
           </select>
-          {errors.reference_range && (
-            <p className="mt-1 text-sm text-red-600">
-              {errors.reference_range.message}
-            </p>
-          )}
           <p className="mt-1 text-xs text-gray-500">
-            Normal reference range for this test
+            {isQualitativeTest
+              ? 'For qualitative tests, record value as Positive/Negative/Reactive/Non-reactive.'
+              : 'Normal reference range for this test'}
           </p>
         </div>
 
