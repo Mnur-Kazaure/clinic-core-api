@@ -75,6 +75,7 @@ class AdmissionRequestResponse(BaseModel):
     decided_at: datetime | None
     decision_reason: str | None
     admission_id: UUID | None = None
+    admission_status: AdmissionStatus | None = None
     has_active_bed_assignment: bool = False
     current_bed_id: UUID | None = None
     current_bed_label: str | None = None

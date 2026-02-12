@@ -128,6 +128,7 @@ def test_list_requests_includes_active_bed_state(db, clinic_id, doctor):
     target = next(item for item in approved if item.id == approved_request.id)
 
     assert target.admission_id == admission.id
+    assert target.admission_status == AdmissionStatus.ACTIVE
     assert target.has_active_bed_assignment is True
     assert str(target.current_bed_id) == str(bed.id)
     assert target.current_bed_label == "A1"
@@ -216,3 +217,37 @@ def test_request_blocked_when_active_admission(db, clinic_id, doctor):
             actor=doctor,
         )
     assert exc.value.status_code == 409
+
+
+def test_list_requests_shows_closed_admission_status_and_no_active_bed(db, clinic_id, doctor):
+    admin = _create_admin(db, clinic_id)
+    patient = _create_patient(db, clinic_id)
+
+    request_service = AdmissionRequestService(db)
+    request = request_service.create_request(
+        patient_id=patient.id,
+        admission_type=AdmissionType.EMERGENCY,
+        reason="Needs admission",
+        actor=doctor,
+    )
+    approved_request, admission = request_service.approve_request(
+        request_id=request.id,
+        actor=admin,
+        decision_reason="Approved",
+    )
+
+    AdmissionService(db).discharge_admission(
+        admission_id=admission.id,
+        actor=admin,
+    )
+
+    approved = request_service.list_requests(
+        actor=admin,
+        status=AdmissionRequestStatus.APPROVED,
+    )
+    target = next(item for item in approved if item.id == approved_request.id)
+
+    assert target.admission_status == AdmissionStatus.DISCHARGED
+    assert target.has_active_bed_assignment is False
+    assert target.current_bed_id is None
+    assert target.current_bed_label is None

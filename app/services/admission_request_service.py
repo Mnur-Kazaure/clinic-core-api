@@ -99,7 +99,21 @@ class AdmissionRequestService:
 
         admission_ids = [request.admission_id for request in requests if request.admission_id]
         active_bed_map: dict[UUID, tuple[UUID, str]] = {}
+        admission_status_map: dict[UUID, AdmissionStatus] = {}
         if admission_ids:
+            admissions = (
+                self.db.query(Admission.id, Admission.status)
+                .filter(
+                    Admission.clinic_id == actor.clinic_id,
+                    Admission.id.in_(admission_ids),
+                )
+                .all()
+            )
+            admission_status_map = {
+                row.id: row.status
+                for row in admissions
+            }
+
             active_beds = (
                 self.db.query(
                     BedAssignment.admission_id,
@@ -125,6 +139,12 @@ class AdmissionRequestService:
                 if request.admission_id is not None
                 else None
             )
+            admission_status = (
+                admission_status_map.get(request.admission_id)
+                if request.admission_id is not None
+                else None
+            )
+            setattr(request, "admission_status", admission_status)
             setattr(request, "has_active_bed_assignment", bed_state is not None)
             setattr(request, "current_bed_id", bed_state[0] if bed_state else None)
             setattr(request, "current_bed_label", bed_state[1] if bed_state else None)
