@@ -9,6 +9,7 @@ import { bedService, Bed, Ward } from '@/domains/bed/services/bedService';
 import {
   admissionRequestService,
   AdmissionRequest,
+  AdmissionStatus,
   AdmissionRequestStatus,
 } from '@/domains/admission/services/admissionRequestService';
 
@@ -23,6 +24,16 @@ const statusVariant: Record<AdmissionRequestStatus, 'warning' | 'success' | 'err
   PENDING: 'warning',
   APPROVED: 'success',
   REJECTED: 'error',
+  CANCELLED: 'ghost',
+};
+const admissionStatusLabels: Record<AdmissionStatus, string> = {
+  ACTIVE: 'Admission Active',
+  DISCHARGED: 'Admission Discharged',
+  CANCELLED: 'Admission Cancelled',
+};
+const admissionStatusVariant: Record<AdmissionStatus, 'success' | 'warning' | 'ghost'> = {
+  ACTIVE: 'success',
+  DISCHARGED: 'warning',
   CANCELLED: 'ghost',
 };
 
@@ -108,7 +119,12 @@ export default function AdmissionRequestsPage() {
     request: AdmissionRequest,
     mode: BedActionMode
   ) => {
+    if (!request.admission_id || request.admission_status !== 'ACTIVE') {
+      setError('Bed actions are allowed only when the admission is ACTIVE.');
+      return;
+    }
     setBedActionSuccess(null);
+    setError(null);
     setBedActionRequest(request);
     setBedActionMode(mode);
     setBedActionModalOpen(true);
@@ -128,6 +144,10 @@ export default function AdmissionRequestsPage() {
   const handleSubmitBedAction = async () => {
     if (!bedActionRequest?.admission_id) {
       setBedActionError('Admission is not active yet. Approve the request first.');
+      return;
+    }
+    if (bedActionRequest.admission_status !== 'ACTIVE') {
+      setBedActionError('Admission is no longer active. Refresh the queue.');
       return;
     }
     if (!selectedBedId) {
@@ -174,6 +194,15 @@ export default function AdmissionRequestsPage() {
         setBedActionError(
           'Selected bed is no longer available. Choose another bed.'
         );
+        return;
+      }
+      if (normalized.includes('admission not active')) {
+        await loadRequests();
+        setBedActionError('Admission is no longer active. Bed action blocked.');
+        return;
+      }
+      if (normalized.includes('transfer target must differ from current bed')) {
+        setBedActionError('Choose a different bed for transfer.');
         return;
       }
 
@@ -312,6 +341,14 @@ export default function AdmissionRequestsPage() {
                       <Badge variant={statusVariant[request.status]} size="sm">
                         {statusLabels[request.status]}
                       </Badge>
+                      {request.admission_status && (
+                        <Badge
+                          variant={admissionStatusVariant[request.admission_status]}
+                          size="sm"
+                        >
+                          {admissionStatusLabels[request.admission_status]}
+                        </Badge>
+                      )}
                       <Badge variant="outline" size="sm">
                         {request.admission_type}
                       </Badge>
@@ -336,7 +373,7 @@ export default function AdmissionRequestsPage() {
                         Approve
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="danger"
                         size="sm"
                         onClick={() => openDecisionModal(request.id, 'reject')}
                         isLoading={actionLoading === request.id}
@@ -347,7 +384,9 @@ export default function AdmissionRequestsPage() {
                     </div>
                   )}
 
-                  {request.status === 'APPROVED' && request.admission_id && (
+                  {request.status === 'APPROVED' &&
+                    request.admission_id &&
+                    request.admission_status === 'ACTIVE' && (
                     <div className="flex items-center gap-2">
                       {request.has_active_bed_assignment ? (
                         <>
@@ -355,7 +394,7 @@ export default function AdmissionRequestsPage() {
                             Bed {request.current_bed_label || 'Assigned'}
                           </Badge>
                           <Button
-                            variant="outline"
+                            variant="secondary"
                             size="sm"
                             onClick={() => openBedActionModal(request, 'transfer')}
                             disabled={listActionLocked}
@@ -374,13 +413,16 @@ export default function AdmissionRequestsPage() {
                         </Button>
                       )}
                     </div>
-                  )}
+                    )}
 
-                  {request.status === 'APPROVED' && !request.admission_id && (
-                    <Badge variant="warning" size="sm">
-                      Admission record unavailable
-                    </Badge>
-                  )}
+                  {request.status === 'APPROVED' &&
+                    (request.admission_status !== 'ACTIVE' || !request.admission_id) && (
+                      <Badge variant="warning" size="sm">
+                        {request.admission_id
+                          ? 'Bed actions blocked: admission is not active'
+                          : 'Admission record unavailable'}
+                      </Badge>
+                    )}
                 </div>
               ))}
             </div>
@@ -425,7 +467,7 @@ export default function AdmissionRequestsPage() {
 
             <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={closeDecisionModal}
                 disabled={actionLoading !== null}
@@ -433,7 +475,7 @@ export default function AdmissionRequestsPage() {
                 Cancel
               </Button>
               <Button
-                variant={decisionAction === 'approve' ? 'primary' : 'outline'}
+                variant={decisionAction === 'approve' ? 'primary' : 'danger'}
                 size="sm"
                 onClick={handleDecisionSubmit}
                 isLoading={actionLoading !== null}
@@ -475,12 +517,18 @@ export default function AdmissionRequestsPage() {
               </button>
             </div>
 
-              <div className="space-y-6 px-6 py-5">
+            <div className="space-y-6 px-6 py-5">
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 {bedActionMode === 'assign'
                   ? 'Use Assign Bed when the patient has no current bed.'
                   : 'Use Transfer Bed only when the patient already has an active bed assignment.'}
               </div>
+
+              {bedActionMode === 'transfer' && bedActionRequest.current_bed_label && (
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                  Current bed: <span className="font-semibold">{bedActionRequest.current_bed_label}</span>
+                </div>
+              )}
 
               {bedActionError && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -593,7 +641,12 @@ export default function AdmissionRequestsPage() {
                   : 'Transfer will release current bed and reserve the new bed.'}
               </p>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={closeBedActionModal}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={closeBedActionModal}
+                  disabled={bedActionSubmitting}
+                >
                   Cancel
                 </Button>
                 <Button

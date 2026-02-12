@@ -6,6 +6,7 @@ export type AdmissionRequestStatus =
   | 'APPROVED'
   | 'REJECTED'
   | 'CANCELLED';
+export type AdmissionStatus = 'ACTIVE' | 'DISCHARGED' | 'CANCELLED';
 
 export interface AdmissionRequest {
   id: string;
@@ -20,6 +21,7 @@ export interface AdmissionRequest {
   decided_at?: string | null;
   decision_reason?: string | null;
   admission_id?: string | null;
+  admission_status?: AdmissionStatus | null;
   has_active_bed_assignment?: boolean;
   current_bed_id?: string | null;
   current_bed_label?: string | null;
