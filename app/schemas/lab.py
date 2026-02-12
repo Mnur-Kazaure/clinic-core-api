@@ -1,14 +1,14 @@
 # app/schemas/lab.py
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from uuid import UUID
 from datetime import datetime
 
 
 class LabResultCreate(BaseModel):
-    result_value: str
-    result_unit: str
-    reference_range: str
+    result_value: str = Field(min_length=1)
+    result_unit: str | None = None
+    reference_range: str | None = None
     technician_id: UUID
 
 

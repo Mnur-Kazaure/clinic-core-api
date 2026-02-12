@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { labService, LabRequest, LabResult } from '@/domains/lab/services/labService';
 import { visitService } from '@/domains/visit/services/visitService';
 import { PurposeOfUse } from '@/shared/enums';
@@ -36,6 +36,14 @@ export function LabRequestDetailsModal({
   const [visitLoading, setVisitLoading] = useState(false);
   const [visitError, setVisitError] = useState<string | null>(null);
 
+  const getErrorDetail = (error: unknown): string | null => {
+    if (typeof error !== 'object' || error === null || !('response' in error)) {
+      return null;
+    }
+    return (error as { response?: { data?: { detail?: string } } }).response
+      ?.data?.detail || null;
+  };
+
   useEffect(() => {
     if (request?.status === 'PENDING') {
       setActiveTab('results');
@@ -44,7 +52,7 @@ export function LabRequestDetailsModal({
     }
   }, [request]);
 
-  const loadResults = async (activeRequest: LabRequest) => {
+  const loadResults = useCallback(async (activeRequest: LabRequest) => {
     try {
       setResultsLoading(true);
       setResultsError(null);
@@ -54,17 +62,15 @@ export function LabRequestDetailsModal({
       });
       setResults(data);
       setResultsUpdatedAt(new Date());
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to load lab results:', error);
-      setResultsError(
-        error.response?.data?.detail || 'Failed to load lab results'
-      );
+      setResultsError(getErrorDetail(error) || 'Failed to load lab results');
     } finally {
       setResultsLoading(false);
     }
-  };
+  }, []);
 
-  const loadVisit = async (activeRequest: LabRequest) => {
+  const loadVisit = useCallback(async (activeRequest: LabRequest) => {
     try {
       setVisitLoading(true);
       setVisitError(null);
@@ -73,22 +79,20 @@ export function LabRequestDetailsModal({
         justification: 'Lab request review',
       });
       setVisitDetails(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to load visit details:', error);
-      setVisitError(
-        error.response?.data?.detail || 'Failed to load visit details'
-      );
+      setVisitError(getErrorDetail(error) || 'Failed to load visit details');
     } finally {
       setVisitLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isOpen && request) {
       loadResults(request);
       loadVisit(request);
     }
-  }, [isOpen, request]);
+  }, [isOpen, loadResults, loadVisit, request]);
 
   if (!isOpen || !request) return null;
 
@@ -414,6 +418,7 @@ export function LabRequestDetailsModal({
               requestId={request.id}
               visitId={request.visit_id}
               testName={request.test_name}
+              hasRecordedResults={results.length > 0}
               onSuccess={handleSuccess}
               onCancel={() => setActiveTab('results')}
             />

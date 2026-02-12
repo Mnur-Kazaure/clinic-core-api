@@ -20,8 +20,8 @@ export interface LabRequest {
 
 export interface LabResultCreate {
   result_value: string;
-  result_unit: string;
-  reference_range: string;
+  result_unit?: string | null;
+  reference_range?: string | null;
   technician_id: string;
 }
 
@@ -89,7 +89,7 @@ export const labService = {
     return response.data;
   },
 
-  async completeVisitLab(visitId: string): Promise<any> {
+  async completeVisitLab(visitId: string): Promise<unknown> {
     const idempotencyKey = `lab-complete-${visitId}-${uuidv4()}`;
     const response = await client.post(
       `/v1/visits/${visitId}/transition`,
