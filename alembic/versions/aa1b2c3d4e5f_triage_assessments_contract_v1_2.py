@@ -263,22 +263,33 @@ def upgrade() -> None:
     backfill_rows = bind.execute(
         sa.text(
             """
+            WITH first_triage AS (
+                SELECT
+                    h.visit_id,
+                    h.changed_by,
+                    h.created_at,
+                    row_number() OVER (
+                        PARTITION BY h.visit_id
+                        ORDER BY h.created_at ASC, h.id ASC
+                    ) AS rn
+                FROM visit_status_history h
+                WHERE h.to_status = 'TRIAGED'
+            )
             SELECT
                 v.id AS visit_id,
                 v.clinic_id AS clinic_id,
                 v.patient_id AS patient_id,
-                MIN(h.created_at) AS triaged_at,
-                MIN(h.changed_by) AS changed_by
+                ft.created_at AS triaged_at,
+                ft.changed_by AS changed_by
             FROM visits v
-            JOIN visit_status_history h
-              ON h.visit_id = v.id
-             AND h.to_status = 'TRIAGED'
+            JOIN first_triage ft
+              ON ft.visit_id = v.id
+             AND ft.rn = 1
             LEFT JOIN triage_assessments ta
               ON ta.visit_id = v.id
              AND ta.superseded_at IS NULL
             WHERE ta.id IS NULL
               AND v.status NOT IN ('REGISTERED', 'TRIAGED')
-            GROUP BY v.id, v.clinic_id, v.patient_id
             """
         )
     ).fetchall()
