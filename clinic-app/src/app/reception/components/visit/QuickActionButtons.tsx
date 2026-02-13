@@ -1,16 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { visitService } from '@/domains/visit/services/visitService';
+import {
+  TriageAssessmentResponse,
+  TriageFinalizeResponse,
+  visitService,
+} from '@/domains/visit/services/visitService';
 import { Button } from '@/shared/Button';
-import { VisitStatus } from '@/shared/enums';
+import { PurposeOfUse, VisitStatus } from '@/shared/enums';
 import type { VisitResponse } from '@/shared/types';
+import { TriageAssessmentModal } from './TriageAssessmentModal';
 
 interface QuickActionButtonsProps {
   visitId: string;
   currentStatus: string;
   visitVersion: number;
   allowedTransitions: string[];
+  currentUserRole?: string | null;
   hiddenTransitions?: string[];
   onStatusChange?: (newStatus: string) => void;
   onVisitUpdated?: (visit: VisitResponse) => void;
@@ -20,6 +26,10 @@ interface QuickActionButtonsProps {
 type OutstandingWork = {
   pending_labs_count: number;
   unfulfilled_prescriptions_count: number;
+};
+
+type ApiErrorObject = Record<string, unknown> & {
+  code?: string;
 };
 
 const OVERRIDE_REASON_LABELS: Record<string, string> = {
@@ -40,6 +50,7 @@ export function QuickActionButtons({
   currentStatus,
   visitVersion,
   allowedTransitions,
+  currentUserRole,
   hiddenTransitions = [],
   onStatusChange,
   onVisitUpdated,
@@ -47,6 +58,11 @@ export function QuickActionButtons({
 }: QuickActionButtonsProps) {
   const [isTransitioning, setIsTransitioning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showTriageModal, setShowTriageModal] = useState(false);
+  const [triageMode, setTriageMode] = useState<'finalize' | 'supersede'>('finalize');
+  const [activeTriageAssessment, setActiveTriageAssessment] =
+    useState<TriageAssessmentResponse | null>(null);
+  const [loadingTriage, setLoadingTriage] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [outstandingWork, setOutstandingWork] = useState<OutstandingWork | null>(null);
   const [overrideReasonCodes, setOverrideReasonCodes] = useState<string[]>([]);
@@ -54,10 +70,61 @@ export function QuickActionButtons({
   const [overrideReasonText, setOverrideReasonText] = useState<string>('');
 
   const transitionsToShow = allowedTransitions.filter(
-    (status) => !hiddenTransitions.includes(status)
+    (status) => !hiddenTransitions.includes(status) && status !== VisitStatus.TRIAGED
   );
+  const canUseTriageAction =
+    ['CHEW', 'MIDWIFE', 'DOCTOR'].includes(currentUserRole || '') &&
+    [VisitStatus.REGISTERED, VisitStatus.TRIAGED].includes(
+      currentStatus as VisitStatus
+    );
 
-  const parseApiDetail = (err: any): unknown => err?.response?.data?.detail;
+  const parseApiDetail = (err: unknown): unknown => {
+    if (!err || typeof err !== 'object' || !('response' in err)) {
+      return null;
+    }
+    return (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+  };
+
+  const asApiErrorObject = (value: unknown): ApiErrorObject | null =>
+    value && typeof value === 'object' ? (value as ApiErrorObject) : null;
+
+  const handleOpenTriage = async () => {
+    try {
+      setLoadingTriage(true);
+      setError(null);
+      const existing = await visitService.getActiveTriage(visitId);
+      setActiveTriageAssessment(existing);
+      setTriageMode(existing ? 'supersede' : 'finalize');
+      setShowTriageModal(true);
+    } catch (err: unknown) {
+      const detail = parseApiDetail(err);
+      setError(
+        typeof detail === 'string'
+          ? detail
+          : 'Unable to load triage context. Please refresh and retry.'
+      );
+    } finally {
+      setLoadingTriage(false);
+    }
+  };
+
+  const handleTriageSaved = async (response: TriageFinalizeResponse) => {
+    setShowTriageModal(false);
+    setActiveTriageAssessment(response.triage_assessment);
+    try {
+      const refreshed = await visitService.getVisit(visitId, {
+        purpose_of_use:
+          currentUserRole === 'DOCTOR'
+            ? PurposeOfUse.TREATMENT
+            : PurposeOfUse.OPERATIONS,
+        justification: 'Refresh visit after triage assessment',
+      });
+      onVisitUpdated?.(refreshed);
+      onStatusChange?.(refreshed.status);
+    } catch {
+      onStatusChange?.(response.visit_status);
+    }
+  };
 
   const handleTransition = async (toStatus: string) => {
     try {
@@ -72,33 +139,34 @@ export function QuickActionButtons({
 
       onVisitUpdated?.(updated);
       onStatusChange?.(updated.status);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Transition failed:', err);
       const detail = parseApiDetail(err);
+      const detailObj = asApiErrorObject(detail);
 
-      if (detail && typeof detail === 'object' && (detail as any).code === 'VERSION_CONFLICT') {
+      if (detailObj?.code === 'VERSION_CONFLICT') {
         setError('This visit was updated by someone else. Please refresh and try again.');
         return;
       }
 
       // Special-case: completion pre-check flow (outstanding work).
-      if (toStatus === VisitStatus.COMPLETED && detail && typeof detail === 'object') {
-        const code = (detail as any).code;
+      if (toStatus === VisitStatus.COMPLETED && detailObj) {
+        const code = detailObj.code;
         if (code === 'VISIT_HAS_OUTSTANDING_WORK') {
-          const allowedOverride = Boolean((detail as any).allowed_override);
+          const allowedOverride = Boolean(detailObj.allowed_override);
           if (!allowedOverride) {
             setError('Cannot complete visit: outstanding work must be resolved first.');
             return;
           }
-          const outstanding = (detail as any).outstanding || {};
+          const outstanding = asApiErrorObject(detailObj.outstanding) || {};
           setOutstandingWork({
             pending_labs_count: Number(outstanding.pending_labs_count || 0),
             unfulfilled_prescriptions_count: Number(
               outstanding.unfulfilled_prescriptions_count || 0
             ),
           });
-          const codes = Array.isArray((detail as any).override_reason_codes)
-            ? ((detail as any).override_reason_codes as string[])
+          const codes = Array.isArray(detailObj.override_reason_codes)
+            ? (detailObj.override_reason_codes as string[])
             : [];
           setOverrideReasonCodes(codes);
           setSelectedOverrideReason(codes[0] || 'PATIENT_LEFT');
@@ -149,10 +217,11 @@ export function QuickActionButtons({
       setOutstandingWork(null);
       onVisitUpdated?.(updated);
       onStatusChange?.(updated.status);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Override completion failed:', err);
       const detail = parseApiDetail(err);
-      if (detail && typeof detail === 'object' && (detail as any).code === 'VERSION_CONFLICT') {
+      const detailObj = asApiErrorObject(detail);
+      if (detailObj?.code === 'VERSION_CONFLICT') {
         setError('This visit was updated by someone else. Please refresh and try again.');
         return;
       }
@@ -164,7 +233,6 @@ export function QuickActionButtons({
 
   const getStatusActionLabel = (status: string) => {
     const labels: Record<string, string> = {
-      TRIAGED: 'Mark as Triaged',
       IN_CONSULTATION: 'Start Consultation',
       LAB_REQUESTED: 'Request Lab',
       LAB_COMPLETED: 'Complete Lab',
@@ -182,7 +250,9 @@ export function QuickActionButtons({
   };
 
   if (transitionsToShow.length === 0 && !onReassign) {
-    return null;
+    if (!canUseTriageAction) {
+      return null;
+    }
   }
 
   return (
@@ -194,6 +264,20 @@ export function QuickActionButtons({
       )}
 
       <div className="flex flex-wrap gap-2">
+        {canUseTriageAction && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleOpenTriage}
+            disabled={isTransitioning !== null || loadingTriage}
+            isLoading={loadingTriage}
+          >
+            {currentStatus === VisitStatus.TRIAGED
+              ? 'Update Triage'
+              : 'Finalize Triage'}
+          </Button>
+        )}
+
         {transitionsToShow.map((status) => (
           <Button
             key={status}
@@ -224,10 +308,26 @@ export function QuickActionButtons({
           ✅ Actions shown are authorized by backend based on your role and visit
           status
         </p>
+        {canUseTriageAction && (
+          <p>
+            Triage must be saved through the triage workflow before consultation starts.
+          </p>
+        )}
         {transitionsToShow.length === 0 && (
           <p>No further actions available for this visit status</p>
         )}
       </div>
+
+      <TriageAssessmentModal
+        isOpen={showTriageModal}
+        visitId={visitId}
+        visitVersion={visitVersion}
+        mode={triageMode}
+        currentUserRole={currentUserRole}
+        existingAssessment={activeTriageAssessment}
+        onClose={() => setShowTriageModal(false)}
+        onSuccess={handleTriageSaved}
+      />
 
       {showCompleteConfirm && outstandingWork && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

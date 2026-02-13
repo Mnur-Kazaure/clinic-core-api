@@ -6,7 +6,7 @@ import { VisitResponse } from '@/shared/types';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
-import { Tooltip } from '@/shared/Tooltip';
+import { VisitStatus } from '@/shared/enums';
 
 interface DoctorQueueProps {
   onStartConsultation?: (visit: VisitResponse) => void;
@@ -24,6 +24,8 @@ export function DoctorQueue({
   const [visits, setVisits] = useState<VisitResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [startingVisitId, setStartingVisitId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] =
     useState<string>('IN_CONSULTATION');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -88,15 +90,56 @@ export function DoctorQueue({
 
   const handleStartConsultation = async (visit: VisitResponse) => {
     try {
-      if (visit.status !== 'IN_CONSULTATION') {
+      setStartError(null);
+      setStartingVisitId(visit.id);
+
+      let visitForConsultation = visit;
+      if (visit.status === VisitStatus.TRIAGED) {
+        visitForConsultation = await visitService.transitionVisit(visit.id, {
+          to_status: VisitStatus.IN_CONSULTATION,
+          expected_version: visit.version,
+          mode: 'normal',
+        });
+        setVisits((prev) =>
+          prev.map((item) =>
+            item.id === visitForConsultation.id ? visitForConsultation : item
+          )
+        );
+      }
+
+      if (visitForConsultation.status !== VisitStatus.IN_CONSULTATION) {
+        setStartError('Visit must be moved into consultation before starting.');
         return;
       }
 
       if (onStartConsultation) {
-        onStartConsultation(visit);
+        onStartConsultation(visitForConsultation);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to start consultation:', error);
+      const detail =
+        typeof error === 'object' && error && 'response' in error
+          ? (error as { response?: { data?: { detail?: unknown } } }).response
+              ?.data?.detail
+          : undefined;
+
+      if (detail && typeof detail === 'object') {
+        const code = (detail as { code?: string }).code;
+        if (code === 'VERSION_CONFLICT') {
+          setStartError(
+            'Visit was updated by another user. Refresh queue and retry.'
+          );
+          return;
+        }
+      }
+
+      setStartError(
+        typeof detail === 'string'
+          ? detail
+          : 'Unable to start consultation. Please refresh and try again.'
+      );
+    } finally {
+      setStartingVisitId(null);
     }
   };
 
@@ -190,6 +233,11 @@ export function DoctorQueue({
                 </button>
               </div>
             </div>
+          </div>
+        )}
+        {startError && (
+          <div className="p-3 rounded-md border border-amber-200 bg-amber-50 text-sm text-amber-900">
+            {startError}
           </div>
         )}
 
@@ -290,6 +338,8 @@ export function DoctorQueue({
                             e.stopPropagation();
                             handleStartConsultation(visit);
                           }}
+                          isLoading={startingVisitId === visit.id}
+                          disabled={startingVisitId !== null}
                         >
                           Start Consultation
                         </Button>
@@ -312,17 +362,18 @@ export function DoctorQueue({
                       )}
 
                       {visit.status === 'TRIAGED' && (
-                        <Tooltip content="Consultation starts after status changes to IN_CONSULTATION.">
-                          <div>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled
-                            >
-                              Awaiting Consultation Status
-                            </Button>
-                          </div>
-                        </Tooltip>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartConsultation(visit);
+                          }}
+                          isLoading={startingVisitId === visit.id}
+                          disabled={startingVisitId !== null}
+                        >
+                          Start Consultation
+                        </Button>
                       )}
 
                       <button

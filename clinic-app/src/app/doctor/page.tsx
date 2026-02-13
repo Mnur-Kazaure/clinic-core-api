@@ -6,7 +6,7 @@ import { LabRequestForm } from '@/app/doctor/components/lab/LabRequestForm';
 import { PrescriptionForm } from '@/app/doctor/components/prescription/PrescriptionForm';
 import { DoctorQueue } from '@/app/doctor/components/DoctorQueue';
 import { VisitDetailsModal } from '@/app/reception/components/visit/VisitDetailsModal';
-import { PurposeOfUse } from '@/shared/enums';
+import { PurposeOfUse, VisitStatus } from '@/shared/enums';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
 import { Tooltip } from '@/shared/Tooltip';
@@ -28,6 +28,7 @@ export default function DoctorPage() {
   const [actionWarning, setActionWarning] = useState<string | null>(null);
   const [allowedTransitions, setAllowedTransitions] = useState<string[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [startingConsultation, setStartingConsultation] = useState(false);
 
   const [activeConsultation, setActiveConsultation] = useState<{
     visitId: string;
@@ -63,6 +64,13 @@ export default function DoctorPage() {
   const [activeConsultationsUpdatedAt, setActiveConsultationsUpdatedAt] =
     useState<Date | null>(null);
   const [queueRefreshToken, setQueueRefreshToken] = useState(0);
+
+  const getApiErrorDetail = (err: unknown): unknown => {
+    if (!err || typeof err !== 'object' || !('response' in err)) {
+      return null;
+    }
+    return (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -118,7 +126,7 @@ export default function DoctorPage() {
         if (isMounted) {
           setAllowedTransitions(result.allowed || []);
         }
-      } catch (error) {
+      } catch {
         if (isMounted) {
           setAllowedTransitions([]);
         }
@@ -501,7 +509,7 @@ export default function DoctorPage() {
       const updated = await visitService.transitionVisit(
         consultationVisit.id,
         {
-          to_status: 'PHARMACY_PENDING' as any,
+          to_status: VisitStatus.PHARMACY_PENDING,
           expected_version: consultationVisit.version,
           mode: 'normal',
         }
@@ -513,8 +521,8 @@ export default function DoctorPage() {
       );
       setQueueRefreshToken((prev) => prev + 1);
       setAllowedTransitions([]);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
+    } catch (err: unknown) {
+      const detail = getApiErrorDetail(err);
       setActionWarning(
         typeof detail === 'string'
           ? detail
@@ -522,6 +530,60 @@ export default function DoctorPage() {
       );
     } finally {
       setIsTransitioning(false);
+    }
+  };
+
+  const handleOpenConsultationWorkspace = async (
+    visit: VisitResponse,
+    hasActiveConsultation: boolean
+  ) => {
+    if (hasActiveConsultation || visit.status !== VisitStatus.TRIAGED) {
+      setIsConsultationModalOpen(true);
+      return;
+    }
+
+    if (!allowedTransitions.includes(VisitStatus.IN_CONSULTATION)) {
+      setActionWarning(
+        'This visit cannot move to consultation yet. Refresh visit details and retry.'
+      );
+      return;
+    }
+
+    try {
+      setStartingConsultation(true);
+      setActionWarning(null);
+      const updated = await visitService.transitionVisit(visit.id, {
+        to_status: VisitStatus.IN_CONSULTATION,
+        expected_version: visit.version,
+        mode: 'normal',
+      });
+      setConsultationVisit(updated);
+      setSelectedVisit(updated);
+      setAllVisits((prev) =>
+        prev.map((entry) => (entry.id === updated.id ? updated : entry))
+      );
+      setQueueRefreshToken((prev) => prev + 1);
+      setIsConsultationModalOpen(true);
+    } catch (err: unknown) {
+      const detail = getApiErrorDetail(err);
+      if (
+        detail &&
+        typeof detail === 'object' &&
+        'code' in detail &&
+        (detail as { code?: string }).code === 'VERSION_CONFLICT'
+      ) {
+        setActionWarning(
+          'Visit was updated by another user. Refresh queue and try again.'
+        );
+        return;
+      }
+      setActionWarning(
+        typeof detail === 'string'
+          ? detail
+          : 'Unable to move visit into consultation. Please refresh and retry.'
+      );
+    } finally {
+      setStartingConsultation(false);
     }
   };
 
@@ -550,6 +612,7 @@ export default function DoctorPage() {
     );
     const labStatus = activeEntry?.labStatus ?? 'none';
     const canStartConsultation = [
+      'TRIAGED',
       'IN_CONSULTATION',
       'LAB_REQUESTED',
       'LAB_COMPLETED',
@@ -618,8 +681,15 @@ export default function DoctorPage() {
                     ? 'secondary'
                     : 'primary'
                 }
-                onClick={() => setIsConsultationModalOpen(true)}
+                onClick={() =>
+                  void handleOpenConsultationWorkspace(
+                    consultationVisit,
+                    Boolean(hasActiveConsultation)
+                  )
+                }
                 className="w-full justify-center"
+                disabled={startingConsultation || isTransitioning}
+                isLoading={startingConsultation}
               >
                 {hasActiveConsultation
                   ? isConsultationCompleted
@@ -710,7 +780,7 @@ export default function DoctorPage() {
                 variant="primary"
                 onClick={handleSendToPharmacy}
                 className="w-full justify-center"
-                disabled={isTransitioning}
+                disabled={isTransitioning || startingConsultation}
               >
                 {isTransitioning ? 'Sending...' : 'Send to Pharmacy'}
               </Button>

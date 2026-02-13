@@ -469,27 +469,11 @@ export function VisitDetailsModal({
     }
   };
 
-  const openAdmissionPrompt = async () => {
+  const openAdmissionPrompt = () => {
     if (!visit) return;
     setAdmissionReason('');
     setAdmissionError(null);
     setAdmissionSuccess(null);
-    try {
-      const pending = await admissionRequestService.listRequests('PENDING');
-      const hasPending = pending.some(
-        (request) => request.patient_id === visit.patient_id
-      );
-      if (hasPending) {
-        setHasPendingAdmissionRequest(true);
-        setAdmissionError(
-          'Pending admission request already exists for this patient.'
-        );
-        return;
-      }
-    } catch {
-      // fallback to server-side validation
-    }
-    setHasPendingAdmissionRequest(false);
     setShowAdmissionPrompt(true);
   };
 
@@ -503,27 +487,21 @@ export function VisitDetailsModal({
     try {
       setAdmissionSubmitting(true);
       setAdmissionError(null);
-      const pending = await admissionRequestService.listRequests('PENDING');
-      const hasPending = pending.some(
-        (request) => request.patient_id === visit.patient_id
-      );
-      if (hasPending) {
-        setHasPendingAdmissionRequest(true);
-        setAdmissionError(
-          'Pending admission request already exists for this patient.'
-        );
-        return;
-      }
       await admissionRequestService.createRequest({
         patient_id: visit.patient_id,
         admission_type: admissionType,
         reason: trimmedReason,
       });
       setAdmissionSuccess('Admission request submitted.');
+      setHasPendingAdmissionRequest(true);
       setShowAdmissionPrompt(false);
     } catch (err: unknown) {
+      const detail = getErrorDetail(err);
+      if (detail?.toLowerCase().includes('pending admission request')) {
+        setHasPendingAdmissionRequest(true);
+      }
       setAdmissionError(
-        getErrorDetail(err) || 'Unable to submit admission request.'
+        detail || 'Unable to submit admission request.'
       );
     } finally {
       setAdmissionSubmitting(false);
@@ -641,6 +619,7 @@ export function VisitDetailsModal({
                       currentStatus={visit.status}
                       visitVersion={visit.version}
                       allowedTransitions={allowedTransitions.allowed}
+                      currentUserRole={currentUserRole}
                       hiddenTransitions={hiddenTransitions}
                       onStatusChange={handleStatusChange}
                       onVisitUpdated={handleVisitUpdated}
