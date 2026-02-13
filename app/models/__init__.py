@@ -42,3 +42,4 @@ from .anc_encounter import ANCEncounter
 from .maternity_delivery_record import MaternityDeliveryRecord
 from .maternity_postnatal_note import MaternityPostnatalNote
 from .family_planning_event import FamilyPlanningEvent
+from .triage_assessment import TriageAssessment

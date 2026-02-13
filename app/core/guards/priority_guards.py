@@ -6,14 +6,16 @@ from app.shared.enums import UserRole
 
 
 PRIORITY_ROLES = {
-    UserRole.RECEPTION,
     UserRole.DOCTOR,
-    UserRole.CLINIC_ADMIN,
+    UserRole.CHEW,
+    UserRole.MIDWIFE,
 }
 
 
 def require_priority_role(user=Depends(get_current_user)):
-    if user.role not in PRIORITY_ROLES:
+    role_value = user.role.value if isinstance(user.role, UserRole) else str(user.role).replace("UserRole.", "")
+    allowed = {role.value for role in PRIORITY_ROLES}
+    if role_value not in allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Priority access denied",

@@ -68,6 +68,36 @@ def doctor(db, clinic_id):
 
 
 @pytest.fixture
+def chew(db, clinic_id):
+    user = User(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        email=f"chew_{clinic_id}@example.test",
+        password_hash="test",
+        role=UserRole.CHEW,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    return user
+
+
+@pytest.fixture
+def midwife(db, clinic_id):
+    user = User(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        email=f"midwife_{clinic_id}@example.test",
+        password_hash="test",
+        role=UserRole.MIDWIFE,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    return user
+
+
+@pytest.fixture
 def visit_registered(db, clinic_id, doctor):
     visit = Visit(
         id=uuid.uuid4(),
