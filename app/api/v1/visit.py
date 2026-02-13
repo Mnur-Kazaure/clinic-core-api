@@ -14,7 +14,14 @@ from app.schemas.visit import (
     VisitIntakeFlagRequest,
     VisitReassignRequest,
 )
+from app.schemas.triage import (
+    TriageAssessmentResponse,
+    TriageFinalizeRequest,
+    TriageFinalizeResponse,
+    TriageSupersedeRequest,
+)
 from app.services.visit.service import VisitService
+from app.services.triage_service import TriageService
 from app.services.pharmacy_service import PharmacyService
 from app.services.access_log_service import AccessLogService
 from app.core.dependencies import get_db
@@ -216,6 +223,122 @@ def transition_visit(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.post(
+    "/{visit_id}/triage/finalize",
+    response_model=TriageFinalizeResponse,
+    status_code=status.HTTP_200_OK,
+)
+def finalize_triage(
+    visit_id: UUID,
+    payload: TriageFinalizeRequest,
+    dep=Depends(idempotent("VISIT_TRIAGE_FINALIZE")),
+    current_user=Depends(require_visit_access),
+):
+    record, key, db = dep
+    if record:
+        return record.response_body
+
+    triage_service = TriageService(db)
+    triage, visit = triage_service.finalize_assessment(
+        visit_id=visit_id,
+        payload=payload,
+        current_user=current_user,
+        idempotency_key=key,
+    )
+
+    response_payload = TriageFinalizeResponse(
+        triage_assessment=TriageAssessmentResponse.model_validate(
+            triage,
+            from_attributes=True,
+        ),
+        visit_id=visit.id,
+        visit_status=visit.status,
+        visit_version=visit.version,
+    ).model_dump(mode="json")
+
+    db.add(
+        IdempotencyKey(
+            id=uuid.uuid4(),
+            key=key,
+            user_id=current_user.id,
+            endpoint="VISIT_TRIAGE_FINALIZE",
+            request_hash=hash_request(payload.model_dump(mode="json")),
+            response_body=response_payload,
+        )
+    )
+    db.commit()
+    return response_payload
+
+
+@router.post(
+    "/{visit_id}/triage/supersede",
+    response_model=TriageFinalizeResponse,
+    status_code=status.HTTP_200_OK,
+)
+def supersede_triage(
+    visit_id: UUID,
+    payload: TriageSupersedeRequest,
+    dep=Depends(idempotent("VISIT_TRIAGE_SUPERSEDE")),
+    current_user=Depends(require_visit_access),
+):
+    record, key, db = dep
+    if record:
+        return record.response_body
+
+    triage_service = TriageService(db)
+    triage, visit = triage_service.supersede_assessment(
+        visit_id=visit_id,
+        payload=payload,
+        current_user=current_user,
+        idempotency_key=key,
+    )
+
+    response_payload = TriageFinalizeResponse(
+        triage_assessment=TriageAssessmentResponse.model_validate(
+            triage,
+            from_attributes=True,
+        ),
+        visit_id=visit.id,
+        visit_status=visit.status,
+        visit_version=visit.version,
+    ).model_dump(mode="json")
+
+    db.add(
+        IdempotencyKey(
+            id=uuid.uuid4(),
+            key=key,
+            user_id=current_user.id,
+            endpoint="VISIT_TRIAGE_SUPERSEDE",
+            request_hash=hash_request(payload.model_dump(mode="json")),
+            response_body=response_payload,
+        )
+    )
+    db.commit()
+    return response_payload
+
+
+@router.get(
+    "/{visit_id}/triage",
+    response_model=TriageAssessmentResponse | None,
+    status_code=status.HTTP_200_OK,
+)
+def get_active_triage(
+    visit_id: UUID,
+    db=Depends(get_db),
+    current_user=Depends(require_visit_access),
+):
+    triage = TriageService(db).get_active_assessment(
+        visit_id=visit_id,
+        current_user=current_user,
+    )
+    if not triage:
+        return None
+    return TriageAssessmentResponse.model_validate(
+        triage,
+        from_attributes=True,
+    )
 
 
 @router.post(

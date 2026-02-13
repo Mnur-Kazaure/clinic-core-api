@@ -4,6 +4,17 @@ from app.shared.enums import VisitStatus, UserRole, PrescriptionStatus
 from app.models.visit import Visit
 from app.models.lab_request import LabRequest
 from app.models.prescription import Prescription
+from app.models.triage_assessment import TriageAssessment
+
+
+def _normalize_role(role) -> UserRole:
+    if isinstance(role, UserRole):
+        return role
+    value = getattr(role, "value", role)
+    try:
+        return UserRole(str(value))
+    except ValueError:
+        return UserRole(str(value).replace("UserRole.", ""))
 
 
 ALLOWED_TRANSITIONS = {
@@ -38,12 +49,23 @@ ALLOWED_TRANSITIONS = {
 
 ROLE_TRANSITION_MATRIX = {
     UserRole.RECEPTION: [
-        VisitStatus.TRIAGED,
         VisitStatus.CANCELLED,
         # Flexible workflow: Reception can complete visits (normal or override).
         VisitStatus.COMPLETED,
     ],
     UserRole.DOCTOR: [
+        VisitStatus.IN_CONSULTATION,
+        VisitStatus.LAB_REQUESTED,
+        VisitStatus.PHARMACY_PENDING,
+        VisitStatus.COMPLETED,
+    ],
+    UserRole.CHEW: [
+        VisitStatus.IN_CONSULTATION,
+        VisitStatus.LAB_REQUESTED,
+        VisitStatus.PHARMACY_PENDING,
+        VisitStatus.COMPLETED,
+    ],
+    UserRole.MIDWIFE: [
         VisitStatus.IN_CONSULTATION,
         VisitStatus.LAB_REQUESTED,
         VisitStatus.PHARMACY_PENDING,
@@ -60,8 +82,9 @@ ROLE_TRANSITION_MATRIX = {
 
 
 def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
+    role = _normalize_role(user.role)
     # 🔒 SYSTEM bypass — internal automation only
-    if user.role == UserRole.SYSTEM:
+    if role == UserRole.SYSTEM:
         return
     # 1️⃣ No edits after completion
     if visit.status == VisitStatus.COMPLETED:
@@ -74,12 +97,28 @@ def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
             f"Invalid transition from {visit.status} to {to_status}"
         )
 
+    # TRIAGED is contract-driven: assessments must be finalized through triage endpoint.
+    if to_status == VisitStatus.TRIAGED and role != UserRole.SYSTEM:
+        raise PermissionError("TRIAGE_USE_FINALIZE_ENDPOINT")
+
     # 3️⃣ Role-based authority
-    allowed_for_role = ROLE_TRANSITION_MATRIX.get(user.role, [])
+    allowed_for_role = ROLE_TRANSITION_MATRIX.get(role, [])
     if to_status not in allowed_for_role:
         raise PermissionError(
-            f"Role {user.role} cannot transition visit to {to_status}"
+            f"Role {role} cannot transition visit to {to_status}"
         )
+
+    if visit.status == VisitStatus.TRIAGED and to_status == VisitStatus.IN_CONSULTATION:
+        active_triage = (
+            db.query(TriageAssessment)
+            .filter(
+                TriageAssessment.visit_id == visit.id,
+                TriageAssessment.superseded_at.is_(None),
+            )
+            .first()
+        )
+        if active_triage is None:
+            raise PermissionError("TRIAGE_RECORD_REQUIRED")
 
     # 3️⃣ Lab request must exist before marking visit as LAB_REQUESTED
     if to_status == VisitStatus.LAB_REQUESTED:
@@ -107,12 +146,12 @@ def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
 
     # 5️⃣ Assigned doctor enforcement
     if (
-        user.role == UserRole.DOCTOR
+        role in {UserRole.DOCTOR, UserRole.CHEW, UserRole.MIDWIFE}
         and to_status == VisitStatus.IN_CONSULTATION
         and visit.assigned_doctor_id != user.id
     ):
         raise PermissionError(
-            "Only assigned doctor can start consultation"
+            "Only assigned clinical owner can start consultation"
         )
 
 def _ensure_prescriptions_exist(db, visit: Visit):

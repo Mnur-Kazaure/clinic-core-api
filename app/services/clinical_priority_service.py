@@ -62,10 +62,12 @@ class ClinicalPriorityService:
                 detail="Cross-clinic access denied",
             )
 
-        if current_user.role not in {
-            UserRole.RECEPTION,
-            UserRole.DOCTOR,
-            UserRole.CLINIC_ADMIN,
+        role = current_user.role
+        role_value = role.value if isinstance(role, UserRole) else str(role).replace("UserRole.", "")
+        if role_value not in {
+            UserRole.DOCTOR.value,
+            UserRole.CHEW.value,
+            UserRole.MIDWIFE.value,
         }:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

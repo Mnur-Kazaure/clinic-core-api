@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.clinical_priority_event import ClinicalPriorityEvent
+from app.models.triage_assessment import TriageAssessment
 from app.models.visit import Visit
 from app.models.visit_status_history import VisitStatusHistory
 from app.services.visit.guards import guard_can_transition
@@ -354,6 +355,28 @@ class VisitService:
                         "code": "VERSION_CONFLICT",
                         "current_version": visit.version,
                     },
+                )
+
+        # TRIAGED state is contract-driven through /triage/finalize.
+        if to_status == VisitStatus.TRIAGED and user.role != UserRole.SYSTEM:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "TRIAGE_USE_FINALIZE_ENDPOINT"},
+            )
+
+        if visit.status == VisitStatus.TRIAGED and to_status == VisitStatus.IN_CONSULTATION:
+            active_triage = (
+                self.db.query(TriageAssessment)
+                .filter(
+                    TriageAssessment.visit_id == visit.id,
+                    TriageAssessment.superseded_at.is_(None),
+                )
+                .first()
+            )
+            if active_triage is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "RETRIAGE_REQUIRED"},
                 )
 
         # 🔐 Guards operate on locked row

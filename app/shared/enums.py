@@ -264,6 +264,35 @@ class ClinicalPrioritySource(str, Enum):
     CLINICIAN = "CLINICIAN"
     SYSTEM = "SYSTEM"
 
+
+class TriageScaleVersion(str, Enum):
+    PHC_V1 = "PHC_V1"
+
+
+class TriageComplaintSeverity(str, Enum):
+    MILD = "MILD"
+    MODERATE = "MODERATE"
+    SEVERE = "SEVERE"
+
+
+class TriageFinalizeAction(str, Enum):
+    QUEUE_FOR_CONSULTATION = "QUEUE_FOR_CONSULTATION"
+    REFER_OUT_IMMEDIATE = "REFER_OUT_IMMEDIATE"
+
+
+class TriageFallbackReasonCode(str, Enum):
+    NO_TRIAGER_ON_DUTY = "NO_TRIAGER_ON_DUTY"
+    MASS_CASUALTY = "MASS_CASUALTY"
+    EMERGENCY_OVERRIDE = "EMERGENCY_OVERRIDE"
+    OTHER = "OTHER"
+
+
+class TriageMissingVitalReasonCode(str, Enum):
+    DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"
+    PATIENT_UNSTABLE = "PATIENT_UNSTABLE"
+    CLINICAL_JUDGMENT = "CLINICAL_JUDGMENT"
+    REFUSED = "REFUSED"
+
 # ------------------------------
 # Identity Resolution
 # ------------------------------

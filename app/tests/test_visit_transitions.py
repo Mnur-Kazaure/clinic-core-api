@@ -5,13 +5,14 @@ from app.models.lab_request import LabRequest
 from app.models.prescription import Prescription
 import uuid
 
-def test_reception_can_move_registered_to_waiting(db, receptionist, visit_registered):
-    guard_can_transition(
-        db=db,
-        visit=visit_registered,
-        to_status=VisitStatus.TRIAGED,
-        user=receptionist,
-    )
+def test_triaged_transition_is_contract_driven(db, chew, visit_registered):
+    with pytest.raises(PermissionError):
+        guard_can_transition(
+            db=db,
+            visit=visit_registered,
+            to_status=VisitStatus.TRIAGED,
+            user=chew,
+        )
 
 
 def test_invalid_transition_registered_to_lab_fails(db, receptionist, visit_registered):
