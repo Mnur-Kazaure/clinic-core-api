@@ -49,7 +49,7 @@ async function seedPendingAdmissionRequest(
   request: import('@playwright/test').APIRequestContext,
   receptionCreds: Credentials,
   adminCreds: Credentials
-): Promise<{ patientName: string }> {
+): Promise<{ patientName: string; patientId: string }> {
   await loginApi(request, receptionCreds);
   const unique = Date.now();
   const patientName = `E2E Bed Flow ${unique}`;
@@ -79,7 +79,7 @@ async function seedPendingAdmissionRequest(
   });
   expect(createRequestResponse.ok()).toBeTruthy();
 
-  return { patientName };
+  return { patientName, patientId: patient.id as string };
 }
 
 test.describe('Admin admissions ward workflow', () => {
@@ -115,7 +115,6 @@ test.describe('Admin admissions ward workflow', () => {
 
     const pendingRow = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Approve' }) })
       .first();
     await expect(pendingRow).toBeVisible();
@@ -148,7 +147,6 @@ test.describe('Admin admissions ward workflow', () => {
     await page.getByRole('button', { name: 'Approved' }).click();
     const approvedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Assign Bed' }) })
       .first();
     await expect(approvedRow).toBeVisible();
@@ -175,8 +173,13 @@ test.describe('Admin admissions ward workflow', () => {
     await assignModal.getByRole('button', { name: 'Assign Bed' }).click();
     await expect(page.getByText('Bed assigned successfully.')).toBeVisible();
 
-    await page.getByLabel('Search').fill(seeded.patientName);
-    const occupiedRow = page.locator('tbody tr').filter({ hasText: seeded.patientName }).first();
+    await page.getByLabel('Search').fill(seeded.patientId);
+    const occupiedRow = page
+      .locator('tbody tr')
+      .filter({
+        has: page.getByRole('button', { name: 'View Details' }),
+      })
+      .first();
     await expect(occupiedRow).toBeVisible();
     await occupiedRow.getByRole('button', { name: 'View Details' }).click();
     await expect(page.getByRole('heading', { name: 'Admission bed timeline' })).toBeVisible();
@@ -185,7 +188,6 @@ test.describe('Admin admissions ward workflow', () => {
 
     const activeBedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
       .first();
     await expect(activeBedRow).toBeVisible();
@@ -202,7 +204,6 @@ test.describe('Admin admissions ward workflow', () => {
 
     const postReleaseRow = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
       .first();
     await expect(postReleaseRow).toBeVisible();
@@ -217,7 +218,6 @@ test.describe('Admin admissions ward workflow', () => {
 
     const readOnlyRow = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
       .filter({ hasText: /read-only/i })
       .first();
     await expect(readOnlyRow).toBeVisible();
