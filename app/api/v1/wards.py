@@ -3,7 +3,10 @@ from fastapi import APIRouter, Depends, status
 from uuid import UUID
 
 from app.core.dependencies import get_db
-from app.core.guards.bed_guards import require_bed_management_role
+from app.core.guards.bed_guards import (
+    require_bed_capacity_admin,
+    require_bed_management_role,
+)
 from app.schemas.ward import (
     WardCreateRequest,
     WardResponse,
@@ -43,7 +46,7 @@ def list_wards(
 def create_ward(
     payload: WardCreateRequest,
     db=Depends(get_db),
-    user=Depends(require_bed_management_role),
+    user=Depends(require_bed_capacity_admin),
 ):
     from app.services.bed_service import BedService
 
@@ -63,7 +66,7 @@ def create_ward(
 def preview_ward_bed_range(
     payload: WardBedRangePreviewRequest,
     db=Depends(get_db),
-    user=Depends(require_bed_management_role),
+    user=Depends(require_bed_capacity_admin),
 ):
     from app.services.bed_service import BedService
 
@@ -79,7 +82,7 @@ def preview_ward_bed_range(
 def create_ward_with_bed_range(
     payload: WardBedRangeCreateRequest,
     db=Depends(get_db),
-    user=Depends(require_bed_management_role),
+    user=Depends(require_bed_capacity_admin),
 ):
     from app.services.bed_service import BedService
 
@@ -98,7 +101,7 @@ def set_ward_active(
     ward_id: UUID,
     payload: WardActiveUpdateRequest,
     db=Depends(get_db),
-    user=Depends(require_bed_management_role),
+    user=Depends(require_bed_capacity_admin),
 ):
     from app.services.bed_service import BedService
 
@@ -120,7 +123,7 @@ def set_ward_active(
 def append_ward_bed(
     ward_id: UUID,
     db=Depends(get_db),
-    user=Depends(require_bed_management_role),
+    user=Depends(require_bed_capacity_admin),
 ):
     from app.services.bed_service import BedService
 
@@ -137,7 +140,7 @@ def retire_last_ward_bed(
     ward_id: UUID,
     payload: WardRetireBedRequest,
     db=Depends(get_db),
-    user=Depends(require_bed_management_role),
+    user=Depends(require_bed_capacity_admin),
 ):
     from app.services.bed_service import BedService
 

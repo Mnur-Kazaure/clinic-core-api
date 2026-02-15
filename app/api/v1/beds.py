@@ -4,8 +4,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import get_db
-from app.core.guards.bed_guards import require_bed_management_role
-from app.schemas.bed import BedCreateRequest, BedResponse, BedAssignRequest, BedTransferRequest
+from app.core.guards.bed_guards import (
+    require_bed_capacity_admin,
+    require_bed_management_role,
+)
+from app.schemas.bed import (
+    BedCreateRequest,
+    BedResponse,
+    BedAssignRequest,
+    BedTransferRequest,
+    BedStatusUpdateRequest,
+    BedActiveUpdateRequest,
+)
 from app.services.bed_service import BedService
 
 
@@ -38,7 +48,7 @@ def list_beds(
 def create_bed(
     payload: BedCreateRequest,
     db=Depends(get_db),
-    user=Depends(require_bed_management_role),
+    user=Depends(require_bed_capacity_admin),
 ):
     service = BedService(db)
     return service.create_bed(
@@ -86,4 +96,46 @@ def transfer_bed(
         reason=payload.reason,
         break_glass=payload.break_glass,
         purpose_of_use=payload.purpose_of_use,
+    )
+
+
+@router.post(
+    "/{bed_id}/status",
+    response_model=BedResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_bed_status(
+    bed_id: UUID,
+    payload: BedStatusUpdateRequest,
+    db=Depends(get_db),
+    user=Depends(require_bed_capacity_admin),
+):
+    service = BedService(db)
+    return service.update_bed_status(
+        clinic_id=user.clinic_id,
+        bed_id=bed_id,
+        status_value=payload.status,
+        actor=user,
+        reason=payload.reason,
+    )
+
+
+@router.post(
+    "/{bed_id}/active",
+    response_model=BedResponse,
+    status_code=status.HTTP_200_OK,
+)
+def set_bed_active(
+    bed_id: UUID,
+    payload: BedActiveUpdateRequest,
+    db=Depends(get_db),
+    user=Depends(require_bed_capacity_admin),
+):
+    service = BedService(db)
+    return service.set_bed_active(
+        clinic_id=user.clinic_id,
+        bed_id=bed_id,
+        active=payload.active,
+        actor=user,
+        reason=payload.reason,
     )
