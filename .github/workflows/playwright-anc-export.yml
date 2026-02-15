@@ -70,6 +70,8 @@ jobs:
       E2E_CHEW_PASSWORD: ${{ secrets.E2E_CHEW_PASSWORD }}
       E2E_MIDWIFE_EMAIL: ${{ secrets.E2E_MIDWIFE_EMAIL }}
       E2E_MIDWIFE_PASSWORD: ${{ secrets.E2E_MIDWIFE_PASSWORD }}
+      E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -108,7 +110,9 @@ jobs:
             --chew-email "$E2E_CHEW_EMAIL" \
             --chew-password "$E2E_CHEW_PASSWORD" \
             --midwife-email "$E2E_MIDWIFE_EMAIL" \
-            --midwife-password "$E2E_MIDWIFE_PASSWORD"
+            --midwife-password "$E2E_MIDWIFE_PASSWORD" \
+            --admin-email "$E2E_ADMIN_EMAIL" \
+            --admin-password "$E2E_ADMIN_PASSWORD"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -151,7 +155,7 @@ jobs:
           curl -sf http://localhost:8000/health >/dev/null
           curl -sf http://localhost:3000 >/dev/null
 
-      - name: Run ANC export role-matrix smoke
+      - name: Run role-matrix + admin admissions smoke
         working-directory: clinic-app
         run: pnpm exec playwright test
 
@@ -159,7 +163,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-anc-export-artifacts
+          name: playwright-e2e-artifacts
           path: |
             clinic-app/test-results
             /tmp/backend.log
