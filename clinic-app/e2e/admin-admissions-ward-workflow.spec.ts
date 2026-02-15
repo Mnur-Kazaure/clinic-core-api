@@ -123,7 +123,7 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(
       page.getByRole('heading', { name: 'Approve admission request' })
     ).toBeVisible();
-    await page.getByLabel('Decision reason *').fill('Admission clinically indicated');
+    await page.getByPlaceholder('Approval justification').fill('Admission clinically indicated');
     await page.getByRole('button', { name: 'Approve' }).last().click();
     await expect(
       page.getByRole('heading', { name: 'Approve admission request' })
@@ -133,10 +133,13 @@ test.describe('Admin admissions ward workflow', () => {
     const wardPrefix = `W${String(Date.now()).slice(-3)}-`;
     const firstBedLabel = `${wardPrefix}01`;
 
-    await page.getByLabel('Ward name').fill(wardName);
-    await page.getByLabel('Bed label prefix').fill(wardPrefix);
-    await page.getByLabel('From').fill('1');
-    await page.getByLabel('To').fill('2');
+    await page.locator('label:has-text("Ward name") + input').first().fill(wardName);
+    await page
+      .locator('label:has-text("Bed label prefix") + input')
+      .first()
+      .fill(wardPrefix);
+    await page.locator('label:has-text("From") + input').first().fill('1');
+    await page.locator('label:has-text("To") + input').first().fill('2');
     await page.getByRole('button', { name: 'Preview Bed Range' }).click();
     await expect(page.getByText(new RegExp(`${escapeRegex(wardName)} • 2 beds`))).toBeVisible();
     await page.getByRole('button', { name: 'Confirm & Create' }).click();
@@ -173,7 +176,7 @@ test.describe('Admin admissions ward workflow', () => {
     await assignModal.getByRole('button', { name: 'Assign Bed' }).click();
     await expect(page.getByText('Bed assigned successfully.')).toBeVisible();
 
-    await page.getByLabel('Search').fill(seeded.patientId);
+    await page.getByPlaceholder('Name, MRN, patient ID, bed...').fill(seeded.patientId);
     const occupiedRow = page
       .locator('tbody tr')
       .filter({
@@ -195,9 +198,13 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(
       page.getByRole('heading', { name: 'Release bed (keep admission active)' })
     ).toBeVisible();
-    await page.getByLabel('Release reason *').fill('Temporary bed release');
     await page
-      .getByLabel('I confirm this patient should no longer hold the current bed.')
+      .getByPlaceholder('Patient moved, temporary discharge, cleaning...')
+      .fill('Temporary bed release');
+    await page
+      .locator(
+        'label:has-text("I confirm this patient should no longer hold the current bed.") input[type="checkbox"]'
+      )
       .check();
     await page.getByRole('button', { name: 'Release Bed (Keep Active)' }).last().click();
     await expect(page.getByText(/Bed released for/)).toBeVisible();
@@ -211,8 +218,14 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(
       page.getByRole('heading', { name: 'Discharge active admission' })
     ).toBeVisible();
-    await page.getByLabel('Discharge note *').fill('Discharge after workflow completion');
-    await page.getByLabel('I confirm this admission should be closed now.').check();
+    await page
+      .getByPlaceholder('Clinical/operational discharge reason...')
+      .fill('Discharge after workflow completion');
+    await page
+      .locator(
+        'label:has-text("I confirm this admission should be closed now.") input[type="checkbox"]'
+      )
+      .check();
     await page.getByRole('button', { name: 'Discharge Admission' }).last().click();
     await expect(page.getByText(/Admission discharged for/)).toBeVisible();
 
