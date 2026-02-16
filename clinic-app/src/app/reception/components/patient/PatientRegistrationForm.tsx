@@ -18,6 +18,19 @@ interface PatientRegistrationFormProps {
   compact?: boolean;
 }
 
+const OCCUPATION_OPTIONS = [
+  'Under care',
+  'Housewife',
+  'Widow',
+  'Divorcee',
+  'Civil servant',
+  'Public servant',
+  'Farming',
+  'Business',
+  'Unknown',
+  'Other',
+] as const;
+
 export function PatientRegistrationForm({
   onSuccess,
   onCancel,
@@ -49,7 +62,7 @@ export function PatientRegistrationForm({
       setIsSubmitting(true);
       setSubmitError(null);
 
-      const payload = { ...data };
+      const payload: Parameters<typeof patientService.createPatient>[0] = { ...data };
       if (isProvisional) {
         const trimmedReason = provisionalReason.trim();
         if (trimmedReason.length < 3) {
@@ -264,12 +277,30 @@ export function PatientRegistrationForm({
             placeholder="123 Main Street, City"
           />
 
-          <Input
-            label="Occupation *"
-            {...register('occupation')}
-            error={errors.occupation?.message}
-            placeholder="Engineer"
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Occupation *
+            </label>
+            <select
+              {...register('occupation')}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Select occupation
+              </option>
+              {OCCUPATION_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            {errors.occupation && (
+              <p className="mt-1 text-sm text-red-600">
+                {errors.occupation.message}
+              </p>
+            )}
+          </div>
 
           <div className="flex space-x-3 pt-4">
             <Button
@@ -463,12 +494,28 @@ export function PatientRegistrationForm({
             </div>
 
             <div className="md:col-span-2">
-              <Input
-                label="Occupation *"
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Occupation *
+              </label>
+              <select
                 {...register('occupation')}
-                error={errors.occupation?.message}
-                placeholder="Engineer"
-              />
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  Select occupation
+                </option>
+                {OCCUPATION_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {errors.occupation && (
+                <p className="mt-1 text-sm text-red-600">
+                  {errors.occupation.message}
+                </p>
+              )}
             </div>
           </div>
 
