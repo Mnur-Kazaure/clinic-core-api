@@ -4,6 +4,28 @@ const apiBase = process.env.E2E_API_BASE_URL || 'http://localhost:8000/api';
 
 type Credentials = { email: string; password: string };
 
+function ensureSafeE2EContext(): void {
+  const allowSeed = process.env.E2E_ALLOW_DATA_SEED === 'true';
+  const allowNonLocalApi = process.env.E2E_ALLOW_NONLOCAL_API === 'true';
+  const isLocalApi =
+    apiBase.startsWith('http://localhost:') ||
+    apiBase.startsWith('http://127.0.0.1:');
+
+  if (!allowSeed) {
+    test.skip(
+      true,
+      'Set E2E_ALLOW_DATA_SEED=true to allow E2E tests to create patient/visit/admission records.'
+    );
+  }
+
+  if (!isLocalApi && !allowNonLocalApi) {
+    test.skip(
+      true,
+      `Refusing to seed E2E records on non-local API (${apiBase}). Set E2E_ALLOW_NONLOCAL_API=true to override.`
+    );
+  }
+}
+
 function deriveAdminEmail(email: string): string {
   const [local, domain] = email.split('@');
   return `${local}+admin@${domain}`;
@@ -17,6 +39,8 @@ function requireCredentials(): {
   reception: Credentials;
   admin: Credentials;
 } {
+  ensureSafeE2EContext();
+
   const receptionEmail = process.env.E2E_RECEPTION_EMAIL || '';
   const receptionPassword = process.env.E2E_RECEPTION_PASSWORD || '';
   const adminEmail = process.env.E2E_ADMIN_EMAIL || deriveAdminEmail(receptionEmail);
@@ -51,8 +75,9 @@ async function seedPendingAdmissionRequest(
   adminCreds: Credentials
 ): Promise<{ patientName: string; patientId: string }> {
   await loginApi(request, receptionCreds);
+  const runId = process.env.E2E_RUN_ID || new Date().toISOString().slice(0, 10);
   const unique = Date.now();
-  const patientName = `E2E Bed Flow ${unique}`;
+  const patientName = `E2E ${runId} Bed Flow ${unique}`;
 
   const createPatientResponse = await request.post(`${apiBase}/v1/patient`, {
     data: {
@@ -142,9 +167,19 @@ test.describe('Admin admissions ward workflow', () => {
     await page.locator('label:has-text("To") + input').first().fill('2');
     await page.getByRole('button', { name: 'Preview Bed Range' }).click();
     await expect(page.getByText(new RegExp(`${escapeRegex(wardName)} • 2 beds`))).toBeVisible();
+    const createWardResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/v1/wards/range') &&
+        response.ok()
+    );
     await page.getByRole('button', { name: 'Confirm & Create' }).click();
+    await createWardResponsePromise;
     await expect(
-      page.getByText(new RegExp(`Created ${escapeRegex(wardName)} with 2 beds\\.`))
+      page
+        .locator('div.rounded-lg.border.border-slate-200')
+        .filter({ hasText: wardName })
+        .first()
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'Approved' }).click();
