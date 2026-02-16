@@ -73,11 +73,12 @@ async function seedPendingAdmissionRequest(
   request: import('@playwright/test').APIRequestContext,
   receptionCreds: Credentials,
   adminCreds: Credentials
-): Promise<{ patientName: string; patientId: string }> {
+): Promise<{ patientName: string; patientId: string; admissionReason: string }> {
   await loginApi(request, receptionCreds);
   const runId = process.env.E2E_RUN_ID || new Date().toISOString().slice(0, 10);
   const unique = Date.now();
   const patientName = `E2E ${runId} Bed Flow ${unique}`;
+  const admissionReason = `E2E admission request setup ${unique}`;
 
   const createPatientResponse = await request.post(`${apiBase}/v1/patient`, {
     data: {
@@ -99,7 +100,7 @@ async function seedPendingAdmissionRequest(
     data: {
       patient_id: patient.id,
       admission_type: 'ELECTIVE',
-      reason: 'E2E admission request setup',
+      reason: admissionReason,
     },
   });
   expect(createRequestResponse.ok()).toBeTruthy();
@@ -115,7 +116,7 @@ async function seedPendingAdmissionRequest(
   );
   expect(approveResponse.ok()).toBeTruthy();
 
-  return { patientName, patientId: patient.id as string };
+  return { patientName, patientId: patient.id as string, admissionReason };
 }
 
 test.describe('Admin admissions ward workflow', () => {
@@ -188,7 +189,7 @@ test.describe('Admin admissions ward workflow', () => {
     await page.getByRole('button', { name: 'Approved' }).click();
     const approvedRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
+      .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Assign Bed' }) })
       .first();
     const approvedRowFallback = page
@@ -241,7 +242,7 @@ test.describe('Admin admissions ward workflow', () => {
 
     const activeBedRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
+      .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
       .first();
     const activeBedRowFallback = page
@@ -268,7 +269,7 @@ test.describe('Admin admissions ward workflow', () => {
 
     const postReleaseRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
+      .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
       .first();
     const postReleaseRowFallback = page
@@ -297,7 +298,7 @@ test.describe('Admin admissions ward workflow', () => {
 
     const readOnlyRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: seeded.patientName })
+      .filter({ hasText: seeded.admissionReason })
       .filter({ hasText: /read-only/i })
       .first();
     const readOnlyRowFallback = page
