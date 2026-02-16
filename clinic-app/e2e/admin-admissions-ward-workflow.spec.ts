@@ -221,19 +221,11 @@ test.describe('Admin admissions ward workflow', () => {
       )
     );
 
-    const approvedRowForPatient = page
+    const approvedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Assign Bed' }) })
       .first();
-    const approvedRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({
-        has: page.getByRole('button', { name: 'Assign Bed' }),
-      })
-      .first();
-    const approvedRow =
-      (await approvedRowForPatient.count()) > 0 ? approvedRowForPatient : approvedRowFallback;
     await expect(approvedRow).toBeVisible({ timeout: 30_000 });
     const assignBedButton = approvedRow.getByRole('button', { name: 'Assign Bed' });
     await expect(assignBedButton).toBeEnabled({ timeout: 30_000 });
@@ -274,18 +266,12 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(page.getByText('Bed Timeline').first()).toBeVisible();
     await page.getByRole('button', { name: 'Close', exact: true }).click();
 
-    const activeBedRowForPatient = page
+    const activeBedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
       .first();
-    const activeBedRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
-      .first();
-    const activeBedRow =
-      (await activeBedRowForPatient.count()) > 0 ? activeBedRowForPatient : activeBedRowFallback;
-    await expect(activeBedRow).toBeVisible();
+    await expect(activeBedRow).toBeVisible({ timeout: 30_000 });
     await activeBedRow.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
     const releaseHeading = page.getByRole('heading', {
       name: 'Release bed (keep admission active)',
@@ -310,20 +296,12 @@ test.describe('Admin admissions ward workflow', () => {
     await releaseSubmitButton.click();
     await expect(page.getByText(/Bed released for/).first()).toBeVisible({ timeout: 15_000 });
 
-    const postReleaseRowForPatient = page
+    const postReleaseRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
       .first();
-    const postReleaseRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
-      .first();
-    const postReleaseRow =
-      (await postReleaseRowForPatient.count()) > 0
-        ? postReleaseRowForPatient
-        : postReleaseRowFallback;
-    await expect(postReleaseRow).toBeVisible();
+    await expect(postReleaseRow).toBeVisible({ timeout: 30_000 });
     await postReleaseRow.getByRole('button', { name: 'Discharge Admission' }).click();
     const dischargeHeading = page.getByRole('heading', {
       name: 'Discharge active admission',
@@ -350,18 +328,12 @@ test.describe('Admin admissions ward workflow', () => {
       timeout: 15_000,
     });
 
-    const readOnlyRowForPatient = page
+    const readOnlyRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ hasText: /read-only/i })
       .first();
-    const readOnlyRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: /read-only/i })
-      .first();
-    const readOnlyRow =
-      (await readOnlyRowForPatient.count()) > 0 ? readOnlyRowForPatient : readOnlyRowFallback;
-    await expect(readOnlyRow).toBeVisible();
+    await expect(readOnlyRow).toBeVisible({ timeout: 30_000 });
     await expect(readOnlyRow.getByRole('button', { name: 'Assign Bed' })).toHaveCount(0);
     await expect(readOnlyRow.getByRole('button', { name: 'Discharge Admission' })).toHaveCount(
       0
