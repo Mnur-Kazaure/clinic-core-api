@@ -8,6 +8,9 @@ from app.shared.enums import (
     AdmissionStatus,
     AdmissionRequestStatus,
     AdmissionDischargeDisposition,
+    BedAssignmentType,
+    VisitServiceLine,
+    VisitStatus,
 )
 
 
@@ -24,6 +27,11 @@ class AdmissionCreateRequest(BreakGlassInfo):
 
 class AdmissionCancelRequest(BaseModel):
     reason: str = Field(..., min_length=3)
+
+
+class AdmissionBedReleaseRequest(BaseModel):
+    reason: str = Field(..., min_length=3)
+
 
 class AdmissionDischargeRequest(BaseModel):
     disposition: AdmissionDischargeDisposition = AdmissionDischargeDisposition.HOME
@@ -62,6 +70,21 @@ class AdmissionRequestDecisionRequest(BaseModel):
     reason: str = Field(..., min_length=3)
 
 
+class BedAssignmentTimelineItem(BaseModel):
+    assignment_id: UUID
+    assignment_type: BedAssignmentType
+    bed_id: UUID
+    bed_label: str
+    ward_id: UUID
+    ward_name: str
+    assigned_at: datetime
+    released_at: datetime | None = None
+    reason: str | None = None
+    assigned_by: UUID
+    assigned_by_name: str | None = None
+    from_bed_label: str | None = None
+
+
 class AdmissionRequestResponse(BaseModel):
     id: UUID
     clinic_id: UUID
@@ -79,5 +102,18 @@ class AdmissionRequestResponse(BaseModel):
     has_active_bed_assignment: bool = False
     current_bed_id: UUID | None = None
     current_bed_label: str | None = None
+    patient_name: str | None = None
+    patient_mrn: str | None = None
+    active_visit_id: UUID | None = None
+    active_visit_status: VisitStatus | None = None
+    active_visit_service_line: VisitServiceLine | None = None
+    active_visit_owner_id: UUID | None = None
+    active_visit_owner_name: str | None = None
+    active_visit_version: int | None = None
+    can_assign_bed: bool = False
+    can_reassign_bed: bool = False
+    can_reassign_owner: bool = False
+    action_blockers: list[str] = []
+    bed_timeline: list[BedAssignmentTimelineItem] = []
 
     model_config = ConfigDict(from_attributes=True)
