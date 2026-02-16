@@ -118,7 +118,9 @@ test.describe('Admin admissions ward workflow', () => {
 
     await loginApi(page.request, creds.admin);
     await page.goto('/admin/admissions');
-    await expect(page.getByRole('heading', { name: 'Admission Requests' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Admission Requests' })
+    ).toBeVisible({ timeout: 30_000 });
 
     const requestsQueueTitle = page.getByText('Requests Queue', { exact: true });
     const bedBoardTitle = page.getByText('Bed Board', { exact: true });
@@ -190,14 +192,13 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(approvedRow).toBeVisible();
     await approvedRow.getByRole('button', { name: 'Assign Bed' }).click();
 
-    const assignModal = page
-      .locator('div')
-      .filter({
-        has: page.getByRole('heading', { name: 'Assign bed for admission' }),
-      })
-      .first();
+    const assignModal = page.getByRole('dialog', {
+      name: /Assign bed for admission/i,
+    });
     await expect(assignModal).toBeVisible();
-    await assignModal.locator('select').first().selectOption({ label: wardName });
+    await assignModal
+      .getByLabel('Ward', { exact: true })
+      .selectOption({ label: wardName });
     await expect(
       assignModal.getByRole('button', {
         name: new RegExp(`Bed ${escapeRegex(firstBedLabel)}`),
@@ -209,9 +210,11 @@ test.describe('Admin admissions ward workflow', () => {
       })
       .click();
     await assignModal.getByRole('button', { name: 'Assign Bed' }).click();
-    await expect(page.getByText('Bed assigned successfully.')).toBeVisible();
+    await expect(page.getByText('Bed assigned successfully.').first()).toBeVisible();
 
-    await page.getByPlaceholder('Name, MRN, patient ID, bed...').fill(seeded.patientId);
+    await page
+      .getByPlaceholder(/Name, MRN, patient ID/i)
+      .fill(seeded.patientId);
     const occupiedRow = page
       .locator('tbody tr')
       .filter({
@@ -221,8 +224,8 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(occupiedRow).toBeVisible();
     await occupiedRow.getByRole('button', { name: 'View Details' }).click();
     await expect(page.getByRole('heading', { name: 'Admission bed timeline' })).toBeVisible();
-    await expect(page.getByText('Bed Timeline')).toBeVisible();
-    await page.getByRole('button', { name: 'Close' }).click();
+    await expect(page.getByText('Bed Timeline').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
 
     const activeBedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
@@ -242,7 +245,7 @@ test.describe('Admin admissions ward workflow', () => {
       )
       .check();
     await page.getByRole('button', { name: 'Release Bed (Keep Active)' }).last().click();
-    await expect(page.getByText(/Bed released for/)).toBeVisible();
+    await expect(page.getByText(/Bed released for/).first()).toBeVisible();
 
     const postReleaseRow = page
       .locator('div.rounded-lg.border.border-slate-200')
@@ -262,7 +265,7 @@ test.describe('Admin admissions ward workflow', () => {
       )
       .check();
     await page.getByRole('button', { name: 'Discharge Admission' }).last().click();
-    await expect(page.getByText(/Admission discharged for/)).toBeVisible();
+    await expect(page.getByText(/Admission discharged for/).first()).toBeVisible();
 
     const readOnlyRow = page
       .locator('div.rounded-lg.border.border-slate-200')

@@ -27,6 +27,7 @@ import {
 import { auditService, AuditTimelineItem } from '@/domains/admin/services/auditService';
 import { userService, Doctor as StaffMember } from '@/domains/user/services/userService';
 import { visitService } from '@/domains/visit/services/visitService';
+import { VisitServiceLine as SharedVisitServiceLine } from '@/shared/enums';
 
 const statusLabels: Record<AdmissionRequestStatus, string> = {
   PENDING: 'Pending',
@@ -91,6 +92,26 @@ const occupancyBadgeClass: Record<string, string> = {
   OCCUPIED: 'bg-amber-100 text-amber-700',
   OUT_OF_SERVICE: 'bg-rose-100 text-rose-700',
   INACTIVE: 'bg-slate-200 text-slate-700',
+};
+
+const renderInpatientFlags = (reviewDue: boolean, chronicDue: boolean) => {
+  if (!reviewDue && !chronicDue) {
+    return <span className="text-xs text-slate-500">Stable</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {reviewDue && (
+        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+          Review Due
+        </span>
+      )}
+      {chronicDue && (
+        <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
+          Chronic Due
+        </span>
+      )}
+    </div>
+  );
 };
 
 const bedAdmissionEvents = new Set([
@@ -219,6 +240,7 @@ export default function AdmissionRequestsPage() {
   const [bedBoardLoading, setBedBoardLoading] = useState(true);
   const [bedBoardError, setBedBoardError] = useState<string | null>(null);
   const [bedBoardWardFilter, setBedBoardWardFilter] = useState<string>('all');
+  const [bedBoardWardFocus, setBedBoardWardFocus] = useState<string | null>(null);
   const [occupiedQuery, setOccupiedQuery] = useState('');
   const [occupiedItems, setOccupiedItems] = useState<OccupiedBedItem[]>([]);
   const [occupiedTotal, setOccupiedTotal] = useState(0);
@@ -389,8 +411,12 @@ export default function AdmissionRequestsPage() {
     return () => window.clearTimeout(handle);
   }, [loadOccupiedBeds]);
 
-  const openOccupiedDetail = async (admissionId: string) => {
+  const openOccupiedDetail = async (admissionId: string, wardId?: string) => {
     try {
+      if (wardId) {
+        setBedBoardWardFocus(wardId);
+        setBedBoardWardFilter(wardId);
+      }
       setOccupiedDetailLoading(true);
       setOccupiedDetailError(null);
       setOccupiedDetailOpen(true);
@@ -1002,7 +1028,7 @@ export default function AdmissionRequestsPage() {
       await visitService.reassignOwner(ownerReassignRequest.active_visit_id, {
         assigned_doctor_id: ownerReassignTargetId,
         expected_version: ownerReassignRequest.active_visit_version,
-        service_line: ownerReassignServiceLine,
+        service_line: ownerReassignServiceLine as SharedVisitServiceLine,
         reason: ownerReassignReason.trim(),
       });
       await Promise.all([
@@ -1247,6 +1273,10 @@ export default function AdmissionRequestsPage() {
           (ward) => ward.summary.ward_id === bedBoardWardFilter
         )
     : [];
+  const focusedWard =
+    bedBoard && bedBoardWardFocus
+      ? bedBoard.wards.find((ward) => ward.summary.ward_id === bedBoardWardFocus) || null
+      : null;
   const assignableWards = wards.filter((ward) => ward.active);
   const wardSummaryById = (bedBoard?.wards || []).reduce<Record<string, BedBoardWard['summary']>>(
     (acc, ward) => {
@@ -1550,18 +1580,24 @@ export default function AdmissionRequestsPage() {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <select
-                value={bedBoardWardFilter}
-                onChange={(event) => setBedBoardWardFilter(event.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
-              >
-                <option value="all">All wards</option>
-                {(bedBoard?.wards || []).map((ward) => (
-                  <option key={ward.summary.ward_id} value={ward.summary.ward_id}>
-                    {ward.summary.ward_name}
-                  </option>
-                ))}
-              </select>
+              {focusedWard && (
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                  Selected ward: {focusedWard.summary.ward_name}
+                </span>
+              )}
+              {focusedWard && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setBedBoardWardFocus(null);
+                    setBedBoardWardFilter('all');
+                  }}
+                  disabled={bedActionSubmitting}
+                >
+                  Clear selection
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 size="sm"
@@ -1596,170 +1632,231 @@ export default function AdmissionRequestsPage() {
               No wards available for bed-board view.
             </div>
           ) : (
-            <div className="space-y-3">
-              {boardWards.map((ward) => (
-                <div
-                  key={ward.summary.ward_id}
-                  className="rounded-lg border border-slate-200 bg-white"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {ward.summary.ward_name}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {ward.summary.ward_type} • {ward.summary.total_beds} beds
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">
-                          Avail {ward.summary.available_beds}
-                        </span>
-                        <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">
-                          Occupied {ward.summary.occupied_beds}
-                        </span>
-                        <span className="rounded-full bg-rose-100 px-2 py-1 text-rose-700">
-                          OOS {ward.summary.out_of_service_beds}
-                        </span>
-                        {ward.summary.inactive_beds > 0 && (
-                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                            Inactive {ward.summary.inactive_beds}
-                          </span>
-                        )}
-                        <span
-                          className={`rounded-full px-2 py-1 ${
-                            ward.summary.ward_active
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {ward.summary.ward_active ? 'Ward active' : 'Ward inactive'}
-                        </span>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {boardWards.map((ward) => {
+                const isFocused = bedBoardWardFocus === ward.summary.ward_id;
+                return (
+                  <button
+                    key={ward.summary.ward_id}
+                    type="button"
+                    onClick={() => {
+                      setBedBoardWardFocus(ward.summary.ward_id);
+                      setBedBoardWardFilter(ward.summary.ward_id);
+                    }}
+                    className={`group rounded-xl border px-4 py-4 text-left transition ${
+                      isFocused
+                        ? 'border-slate-400 bg-white shadow-sm'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+                    }`}
+                    aria-pressed={isFocused}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {ward.summary.ward_name}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {ward.summary.ward_type} • {ward.summary.total_beds} beds
+                        </p>
                       </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          openActiveToggleModal(
-                            'ward',
-                            ward.summary.ward_id,
-                            ward.summary.ward_name,
-                            ward.summary.ward_active,
-                            !ward.summary.ward_active
-                          )
-                        }
-                        disabled={listActionLocked}
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs ${
+                          ward.summary.ward_active
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
                       >
-                        {ward.summary.ward_active ? 'Deactivate Ward' : 'Reactivate Ward'}
-                      </Button>
+                        {ward.summary.ward_active ? 'Active' : 'Inactive'}
+                      </span>
                     </div>
-                  </div>
-                  {ward.beds.length === 0 ? (
-                    <p className="px-4 py-4 text-sm text-slate-500">
-                      No beds configured in this ward.
-                    </p>
-                  ) : (
-                    <div className="grid gap-3 px-4 py-3 md:grid-cols-2">
-                      {ward.beds.map((bed) => {
-                        const canMarkOutOfService =
-                          bed.occupancy_status === 'AVAILABLE' && bed.bed_active;
-                        const canMarkAvailable =
-                          bed.occupancy_status === 'OUT_OF_SERVICE' && bed.bed_active;
-                        const canDeactivateBed =
-                          bed.bed_active && bed.occupancy_status !== 'OCCUPIED';
-                        const canReactivateBed = !bed.bed_active;
-                        return (
-                          <div
-                            key={bed.bed_id}
-                            className="rounded-lg border border-slate-200 px-3 py-3"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-slate-900">
-                                Bed {bed.bed_label}
-                              </p>
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${occupancyBadgeClass[bed.occupancy_status]}`}
-                              >
-                                {bed.occupancy_status === 'OUT_OF_SERVICE'
-                                  ? 'Out of service'
-                                  : bed.occupancy_status}
-                              </span>
-                            </div>
-                            <div className="mt-2 text-xs">
-                              <span
-                                className={`rounded-full px-2 py-0.5 ${
-                                  bed.bed_active
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-slate-200 text-slate-700'
-                                }`}
-                              >
-                                {bed.bed_active ? 'Bed active' : 'Bed inactive'}
-                              </span>
-                            </div>
-                            {bed.occupancy_status === 'OCCUPIED' && bed.occupant && (
-                              <div className="mt-2 space-y-0.5 text-xs text-slate-600">
-                                <p>
-                                  {bed.occupant.patient_name ||
-                                    `Patient ${maskId(bed.occupant.patient_id)}`}
-                                </p>
-                                <p>
-                                  {bed.occupant.patient_mrn
-                                    ? `MRN ${bed.occupant.patient_mrn}`
-                                    : `Patient ID ${maskId(bed.occupant.patient_id)}`}
-                                </p>
-                                <p>Admission {maskId(bed.occupant.admission_id)}</p>
-                              </div>
-                            )}
-                            {(canMarkOutOfService || canMarkAvailable) && (
-                              <div className="mt-3">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() =>
-                                    openBedStatusModal(
-                                      bed.bed_id,
-                                      bed.bed_label,
-                                      ward.summary.ward_name,
-                                      canMarkOutOfService ? 'AVAILABLE' : 'OUT_OF_SERVICE',
-                                      canMarkOutOfService ? 'OUT_OF_SERVICE' : 'AVAILABLE'
-                                    )
-                                  }
-                                  disabled={listActionLocked}
-                                >
-                                  {canMarkOutOfService
-                                    ? 'Mark Out of Service'
-                                    : 'Mark Available'}
-                                </Button>
-                              </div>
-                            )}
-                            {(canDeactivateBed || canReactivateBed) && (
-                              <div className="mt-2">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() =>
-                                    openActiveToggleModal(
-                                      'bed',
-                                      bed.bed_id,
-                                      bed.bed_label,
-                                      bed.bed_active,
-                                      !bed.bed_active
-                                    )
-                                  }
-                                  disabled={listActionLocked}
-                                >
-                                  {canDeactivateBed ? 'Deactivate Bed' : 'Reactivate Bed'}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-lg bg-emerald-50 px-2 py-2 text-emerald-700">
+                        <p className="text-[10px] uppercase tracking-wide text-emerald-600">
+                          Avail
+                        </p>
+                        <p className="text-sm font-semibold">
+                          {ward.summary.available_beds}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-amber-50 px-2 py-2 text-amber-700">
+                        <p className="text-[10px] uppercase tracking-wide text-amber-600">
+                          Occupied
+                        </p>
+                        <p className="text-sm font-semibold">
+                          {ward.summary.occupied_beds}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-rose-50 px-2 py-2 text-rose-700">
+                        <p className="text-[10px] uppercase tracking-wide text-rose-600">
+                          OOS
+                        </p>
+                        <p className="text-sm font-semibold">
+                          {ward.summary.out_of_service_beds}
+                        </p>
+                      </div>
                     </div>
-                  )}
+                    <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                      <span>
+                        {ward.summary.inactive_beds > 0
+                          ? `${ward.summary.inactive_beds} inactive`
+                          : 'All beds active'}
+                      </span>
+                      <span className="text-slate-400">
+                        {isFocused ? 'Selected' : 'View beds'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {focusedWard && (
+            <div className="rounded-xl border border-slate-200 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Ward Resources • {focusedWard.summary.ward_name}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {focusedWard.summary.ward_type} •{' '}
+                    {focusedWard.summary.total_beds} beds
+                  </p>
                 </div>
-              ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      openActiveToggleModal(
+                        'ward',
+                        focusedWard.summary.ward_id,
+                        focusedWard.summary.ward_name,
+                        focusedWard.summary.ward_active,
+                        !focusedWard.summary.ward_active
+                      )
+                    }
+                    disabled={listActionLocked}
+                  >
+                    {focusedWard.summary.ward_active
+                      ? 'Deactivate Ward'
+                      : 'Reactivate Ward'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setBedBoardWardFocus(null);
+                      setBedBoardWardFilter('all');
+                    }}
+                  >
+                    Close Ward
+                  </Button>
+                </div>
+              </div>
+              {focusedWard.beds.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-slate-500">
+                  No beds configured in this ward.
+                </p>
+              ) : (
+                <div className="grid gap-3 px-4 py-3 md:grid-cols-2">
+                  {focusedWard.beds.map((bed) => {
+                    const canMarkOutOfService =
+                      bed.occupancy_status === 'AVAILABLE' && bed.bed_active;
+                    const canMarkAvailable =
+                      bed.occupancy_status === 'OUT_OF_SERVICE' && bed.bed_active;
+                    const canDeactivateBed =
+                      bed.bed_active && bed.occupancy_status !== 'OCCUPIED';
+                    const canReactivateBed = !bed.bed_active;
+                    return (
+                      <div
+                        key={bed.bed_id}
+                        className="rounded-lg border border-slate-200 px-3 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">
+                            Bed {bed.bed_label}
+                          </p>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${occupancyBadgeClass[bed.occupancy_status]}`}
+                          >
+                            {bed.occupancy_status === 'OUT_OF_SERVICE'
+                              ? 'Out of service'
+                              : bed.occupancy_status}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-xs">
+                          <span
+                            className={`rounded-full px-2 py-0.5 ${
+                              bed.bed_active
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {bed.bed_active ? 'Bed active' : 'Bed inactive'}
+                          </span>
+                        </div>
+                        {bed.occupancy_status === 'OCCUPIED' && bed.occupant && (
+                          <div className="mt-2 space-y-0.5 text-xs text-slate-600">
+                            <p>
+                              {bed.occupant.patient_name ||
+                                `Patient ${maskId(bed.occupant.patient_id)}`}
+                            </p>
+                            <p>
+                              {bed.occupant.patient_mrn
+                                ? `MRN ${bed.occupant.patient_mrn}`
+                                : `Patient ID ${maskId(bed.occupant.patient_id)}`}
+                            </p>
+                            <p>Admission {maskId(bed.occupant.admission_id)}</p>
+                          </div>
+                        )}
+                        {(canMarkOutOfService || canMarkAvailable) && (
+                          <div className="mt-3">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() =>
+                                openBedStatusModal(
+                                  bed.bed_id,
+                                  bed.bed_label,
+                                  focusedWard.summary.ward_name,
+                                  canMarkOutOfService ? 'AVAILABLE' : 'OUT_OF_SERVICE',
+                                  canMarkOutOfService ? 'OUT_OF_SERVICE' : 'AVAILABLE'
+                                )
+                              }
+                              disabled={listActionLocked}
+                            >
+                              {canMarkOutOfService
+                                ? 'Mark Out of Service'
+                                : 'Mark Available'}
+                            </Button>
+                          </div>
+                        )}
+                        {(canDeactivateBed || canReactivateBed) && (
+                          <div className="mt-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() =>
+                                openActiveToggleModal(
+                                  'bed',
+                                  bed.bed_id,
+                                  bed.bed_label,
+                                  bed.bed_active,
+                                  !bed.bed_active
+                                )
+                              }
+                              disabled={listActionLocked}
+                            >
+                              {canDeactivateBed ? 'Deactivate Bed' : 'Reactivate Bed'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -1768,13 +1865,13 @@ export default function AdmissionRequestsPage() {
               <div>
                 <p className="text-sm font-semibold text-slate-900">Occupied Beds</p>
                 <p className="text-xs text-slate-500">
-                  Search by patient name, MRN, patient ID, or bed label.
+                  Search by patient name, MRN, or patient ID.
                 </p>
               </div>
               <div className="w-full max-w-sm">
                 <Input
                   label="Search"
-                  placeholder="Name, MRN, patient ID, bed..."
+                  placeholder="Name, MRN, patient ID..."
                   value={occupiedQuery}
                   onChange={(event) => setOccupiedQuery(event.target.value)}
                 />
@@ -1797,19 +1894,20 @@ export default function AdmissionRequestsPage() {
                     <th className="px-4 py-3 text-left">MRN</th>
                     <th className="px-4 py-3 text-left">Type</th>
                     <th className="px-4 py-3 text-left">Assigned</th>
+                    <th className="px-4 py-3 text-left">Flags</th>
                     <th className="px-4 py-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {occupiedLoading ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
                         Loading occupied beds…
                       </td>
                     </tr>
                   ) : occupiedItems.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
                         No occupied beds match this search.
                       </td>
                     </tr>
@@ -1830,11 +1928,16 @@ export default function AdmissionRequestsPage() {
                         <td className="px-4 py-3">
                           {new Date(item.assigned_at).toLocaleString()}
                         </td>
+                        <td className="px-4 py-3">
+                          {renderInpatientFlags(item.review_due, item.chronic_due)}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => openOccupiedDetail(item.admission_id)}
+                            onClick={() =>
+                              openOccupiedDetail(item.admission_id, item.ward_id)
+                            }
                           >
                             View Details
                           </Button>
@@ -2768,9 +2871,14 @@ export default function AdmissionRequestsPage() {
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
                       Admission {occupiedDetail.admission_type} •{' '}
-                      {occupiedDetail.ward_name || 'Ward'} •{' '}
-                      {occupiedDetail.bed_label || 'Bed'}
+                      {occupiedDetail.ward_name || 'Ward'}
                     </p>
+                    <div className="mt-2">
+                      {renderInpatientFlags(
+                        occupiedDetail.review_due,
+                        occupiedDetail.chronic_due
+                      )}
+                    </div>
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-900">
@@ -2791,7 +2899,7 @@ export default function AdmissionRequestsPage() {
                               {entry.assignment_type === 'ASSIGN'
                                 ? 'Assigned'
                                 : 'Transferred'}{' '}
-                              • Bed {entry.bed_label} ({entry.ward_name})
+                              • {entry.ward_name}
                             </p>
                             <p>
                               {new Date(entry.assigned_at).toLocaleString()}
@@ -2942,13 +3050,21 @@ export default function AdmissionRequestsPage() {
 
       {bedActionModalOpen && bedActionRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bed-action-dialog-title"
+            className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+          >
             <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
                   {bedActionMode === 'assign' ? 'Bed assignment' : 'Bed reassignment'}
                 </p>
-                <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                <h2
+                  id="bed-action-dialog-title"
+                  className="mt-1 text-xl font-semibold text-slate-900"
+                >
                   {bedActionMode === 'assign'
                     ? 'Assign bed for admission'
                     : 'Reassign bed for admission'}
@@ -2969,8 +3085,8 @@ export default function AdmissionRequestsPage() {
               </button>
             </div>
 
-            <div className="space-y-6 px-6 py-5">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 {bedActionMode === 'assign'
                   ? 'Use Assign Bed when the patient has no current bed.'
                   : 'Use Reassign Bed only when the patient already has an active bed assignment.'}
@@ -3007,31 +3123,55 @@ export default function AdmissionRequestsPage() {
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="min-w-[200px]">
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+                <div className="space-y-3">
+                  <label
+                    htmlFor="bed-action-ward-select"
+                    className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400"
+                  >
                     Ward
                   </label>
-                  <select
-                    value={selectedWard}
-                    disabled={bedsLoading || bedActionSubmitting}
-                    onChange={async (event) => {
-                      const next = event.target.value;
-                      setSelectedWard(next);
-                      setSelectedBedId('');
-                      await loadAvailableBeds(next);
-                    }}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
-                  >
-                    {assignableWards.length === 0 && (
-                      <option value="">No wards available</option>
-                    )}
-                    {assignableWards.map((ward) => (
-                      <option key={ward.id} value={ward.id}>
-                        {ward.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <select
+                      id="bed-action-ward-select"
+                      value={selectedWard}
+                      disabled={bedsLoading || bedActionSubmitting}
+                      onChange={async (event) => {
+                        const next = event.target.value;
+                        setSelectedWard(next);
+                        setSelectedBedId('');
+                        await loadAvailableBeds(next);
+                      }}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                    >
+                      {assignableWards.length === 0 && (
+                        <option value="">No wards available</option>
+                      )}
+                      {assignableWards.map((ward) => (
+                        <option key={ward.id} value={ward.id}>
+                          {ward.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                      <span>
+                        {selectedWard
+                          ? wards.find((ward) => ward.id === selectedWard)?.ward_type ||
+                            'Ward'
+                          : 'Select a ward'}
+                      </span>
+                      <span>{bedsLoading ? 'Loading' : `${beds.length} available`}</span>
+                    </div>
+                  </div>
+                  {selectedBedId ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">
+                      Selected bed ready for assignment.
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                      Select a bed from the list to continue.
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex-1">
@@ -3062,48 +3202,65 @@ export default function AdmissionRequestsPage() {
                   </span>
                 </div>
 
-                {bedsLoading ? (
-                  <div className="space-y-3">
-                    <div className="shimmer h-12 rounded-lg"></div>
-                    <div className="shimmer h-12 rounded-lg"></div>
-                  </div>
-                ) : beds.length === 0 ? (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                    No available beds for the selected ward.
-                  </div>
-                ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {beds.map((bed) => {
-                      const ward = wards.find((item) => item.id === bed.ward_id);
-                      const selected = selectedBedId === bed.id;
-                      return (
-                        <button
-                          key={bed.id}
-                          type="button"
-                          disabled={bedActionSubmitting}
-                          onClick={() => setSelectedBedId(bed.id)}
-                          className={`flex items-center justify-between rounded-lg border px-4 py-3 text-left transition ${
-                            selected
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
-                          }`}
-                        >
-                          <div>
-                            <p className="text-sm font-semibold">
-                              Bed {bed.bed_label}
-                            </p>
-                            <p className={`text-xs ${selected ? 'text-white/80' : 'text-slate-500'}`}>
-                              {ward?.name || 'Unassigned ward'}
-                            </p>
-                          </div>
-                          <Badge variant={selected ? 'success' : 'outline'} size="sm">
-                            Available
-                          </Badge>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <div className="max-h-[45vh] overflow-y-auto pr-2">
+                  {bedsLoading ? (
+                    <div className="space-y-3">
+                      <div className="shimmer h-12 rounded-lg"></div>
+                      <div className="shimmer h-12 rounded-lg"></div>
+                      <div className="shimmer h-12 rounded-lg"></div>
+                    </div>
+                  ) : beds.length === 0 ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                      No available beds for the selected ward.
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {beds.map((bed) => {
+                        const ward = wards.find((item) => item.id === bed.ward_id);
+                        const selected = selectedBedId === bed.id;
+                        return (
+                          <button
+                            key={bed.id}
+                            type="button"
+                            disabled={bedActionSubmitting}
+                            onClick={() => setSelectedBedId(bed.id)}
+                            aria-pressed={selected}
+                            className={`flex flex-col items-start gap-2 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
+                              selected
+                                ? 'border-sky-400 bg-sky-50 text-slate-900 ring-1 ring-sky-200'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex w-full items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-semibold">
+                                  Bed {bed.bed_label}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  {ward?.name || 'Unassigned ward'}
+                                </p>
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs ${
+                                  selected
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                Available
+                              </span>
+                            </div>
+                            {selected && (
+                              <div className="text-xs text-sky-700">
+                                Selected for assignment
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
