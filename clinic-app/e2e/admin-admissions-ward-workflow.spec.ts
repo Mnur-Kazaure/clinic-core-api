@@ -187,6 +187,40 @@ test.describe('Admin admissions ward workflow', () => {
     ).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole('button', { name: 'Approved' }).click();
+
+    const approvedResponse = await page.request.get(
+      `${apiBase}/v1/admissions/requests?status_filter=APPROVED`
+    );
+    expect(approvedResponse.ok()).toBeTruthy();
+    const approvedRequests = (await approvedResponse.json()) as Array<Record<string, unknown>>;
+    const targetApproved = approvedRequests.find(
+      (item) => String(item.reason || '') === seeded.admissionReason
+    );
+    const bedBoardResponse = await page.request.get(`${apiBase}/v1/bed-board`);
+    expect(bedBoardResponse.ok()).toBeTruthy();
+    const bedBoard = (await bedBoardResponse.json()) as Record<string, unknown>;
+    // Keep CI diagnostics concise when assign-bed readiness regresses.
+    console.log(
+      'E2E_ADMIN_ASSIGN_DEBUG',
+      JSON.stringify(
+        {
+          target: targetApproved
+            ? {
+                status: targetApproved.status,
+                admission_status: targetApproved.admission_status,
+                can_assign_bed: targetApproved.can_assign_bed,
+                has_active_bed_assignment: targetApproved.has_active_bed_assignment,
+                action_blockers: targetApproved.action_blockers,
+                active_visit_id: targetApproved.active_visit_id,
+              }
+            : null,
+          bed_board_summary: (bedBoard.summary as Record<string, unknown>) || null,
+        },
+        null,
+        2
+      )
+    );
+
     const approvedRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
