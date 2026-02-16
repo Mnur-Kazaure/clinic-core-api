@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.shared.enums import (
     ClinicalPriorityLevel,
+    TriageAssessmentRecordStatus,
     TriageComplaintSeverity,
     TriageFallbackReasonCode,
     TriageFinalizeAction,
@@ -44,6 +45,14 @@ class TriageSupersedeRequest(TriageFinalizeRequest):
     correction_reason_text: str | None = Field(default=None, max_length=500)
 
 
+class TriageDraftRequest(TriageFinalizeRequest):
+    pass
+
+
+class TriageSignRequest(BaseModel):
+    expected_version: int = Field(..., ge=1)
+
+
 class TriageAssessmentResponse(BaseModel):
     id: UUID
     clinic_id: UUID
@@ -52,6 +61,7 @@ class TriageAssessmentResponse(BaseModel):
     assessed_by: UUID
     assessed_by_role: str
     assessed_at: datetime
+    record_status: TriageAssessmentRecordStatus
     finalized_by: UUID
     finalized_at: datetime
     triage_scale_version: TriageScaleVersion
@@ -84,6 +94,13 @@ class TriageAssessmentResponse(BaseModel):
 
 
 class TriageFinalizeResponse(BaseModel):
+    triage_assessment: TriageAssessmentResponse
+    visit_id: UUID
+    visit_status: VisitStatus
+    visit_version: int
+
+
+class TriageDraftResponse(BaseModel):
     triage_assessment: TriageAssessmentResponse
     visit_id: UUID
     visit_status: VisitStatus
