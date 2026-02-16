@@ -194,13 +194,15 @@ test.describe('Admin admissions ward workflow', () => {
     const approvedRowFallback = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({
-        has: page.locator('button:has-text("Assign Bed"):not([disabled])'),
+        has: page.getByRole('button', { name: 'Assign Bed' }),
       })
       .first();
     const approvedRow =
       (await approvedRowForPatient.count()) > 0 ? approvedRowForPatient : approvedRowFallback;
     await expect(approvedRow).toBeVisible({ timeout: 30_000 });
-    await approvedRow.getByRole('button', { name: 'Assign Bed' }).click();
+    const assignBedButton = approvedRow.getByRole('button', { name: 'Assign Bed' });
+    await expect(assignBedButton).toBeEnabled({ timeout: 30_000 });
+    await assignBedButton.click();
 
     const assignModal = page.getByRole('dialog', {
       name: /Assign bed for admission/i,
