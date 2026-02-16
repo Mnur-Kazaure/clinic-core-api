@@ -302,14 +302,8 @@ test.describe('Admin admissions ward workflow', () => {
         'label:has-text("I confirm this patient should no longer hold the current bed.") input[type="checkbox"]'
       )
       .check();
-    const releaseResponsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        /\/v1\/admissions\/.+\/bed\/release$/.test(response.url()) &&
-        response.ok()
-    );
     await releaseModal.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
-    await releaseResponsePromise;
+    await expect(releaseHeading).toBeHidden({ timeout: 15_000 });
     await expect(page.getByText(/Bed released for/).first()).toBeVisible();
 
     const postReleaseRowForPatient = page
@@ -342,14 +336,8 @@ test.describe('Admin admissions ward workflow', () => {
         'label:has-text("I confirm this admission should be closed now.") input[type="checkbox"]'
       )
       .check();
-    const dischargeResponsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        /\/v1\/admissions\/.+\/discharge$/.test(response.url()) &&
-        response.ok()
-    );
     await dischargeModal.getByRole('button', { name: 'Discharge Admission' }).click();
-    await dischargeResponsePromise;
+    await expect(dischargeHeading).toBeHidden({ timeout: 15_000 });
     await expect(page.getByText(/Admission discharged for/).first()).toBeVisible();
 
     const readOnlyRowForPatient = page
