@@ -1,7 +1,7 @@
 # app/models/ward.py
 import uuid
 
-from sqlalchemy import Enum, ForeignKeyConstraint, String, Boolean, UniqueConstraint
+from sqlalchemy import Enum, ForeignKeyConstraint, String, Boolean, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -19,6 +19,9 @@ class Ward(Base):
         nullable=False,
     )
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    bed_label_prefix: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    bed_label_padding: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bed_label_next: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("id", "clinic_id", name="uq_wards_id_clinic"),
