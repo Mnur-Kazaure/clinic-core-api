@@ -291,9 +291,10 @@ test.describe('Admin admissions ward workflow', () => {
       name: 'Release bed (keep admission active)',
     });
     await expect(releaseHeading).toBeVisible();
-    const releaseModal = releaseHeading.locator(
-      'xpath=ancestor::div[contains(@class,"w-full max-w-lg")][1]'
-    );
+    const releaseModal = page
+      .locator('div.fixed.inset-0.z-50')
+      .filter({ has: releaseHeading })
+      .last();
     await releaseModal
       .getByPlaceholder('Patient moved, temporary discharge, cleaning...')
       .fill('Temporary bed release');
@@ -302,9 +303,12 @@ test.describe('Admin admissions ward workflow', () => {
         'label:has-text("I confirm this patient should no longer hold the current bed.") input[type="checkbox"]'
       )
       .check();
-    await releaseModal.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
-    await expect(releaseHeading).toBeHidden({ timeout: 15_000 });
-    await expect(page.getByText(/Bed released for/).first()).toBeVisible();
+    const releaseSubmitButton = releaseModal.getByRole('button', {
+      name: 'Release Bed (Keep Active)',
+    });
+    await expect(releaseSubmitButton).toBeEnabled();
+    await releaseSubmitButton.click();
+    await expect(page.getByText(/Bed released for/).first()).toBeVisible({ timeout: 15_000 });
 
     const postReleaseRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
@@ -325,9 +329,10 @@ test.describe('Admin admissions ward workflow', () => {
       name: 'Discharge active admission',
     });
     await expect(dischargeHeading).toBeVisible();
-    const dischargeModal = dischargeHeading.locator(
-      'xpath=ancestor::div[contains(@class,"w-full max-w-lg")][1]'
-    );
+    const dischargeModal = page
+      .locator('div.fixed.inset-0.z-50')
+      .filter({ has: dischargeHeading })
+      .last();
     await dischargeModal
       .getByPlaceholder('Clinical/operational discharge reason...')
       .fill('Discharge after workflow completion');
@@ -336,9 +341,14 @@ test.describe('Admin admissions ward workflow', () => {
         'label:has-text("I confirm this admission should be closed now.") input[type="checkbox"]'
       )
       .check();
-    await dischargeModal.getByRole('button', { name: 'Discharge Admission' }).click();
-    await expect(dischargeHeading).toBeHidden({ timeout: 15_000 });
-    await expect(page.getByText(/Admission discharged for/).first()).toBeVisible();
+    const dischargeSubmitButton = dischargeModal.getByRole('button', {
+      name: 'Discharge Admission',
+    });
+    await expect(dischargeSubmitButton).toBeEnabled();
+    await dischargeSubmitButton.click();
+    await expect(page.getByText(/Admission discharged for/).first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     const readOnlyRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
