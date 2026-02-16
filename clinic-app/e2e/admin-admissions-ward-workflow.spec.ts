@@ -142,6 +142,7 @@ test.describe('Admin admissions ward workflow', () => {
 
     const pendingRow = page
       .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Approve' }) })
       .first();
     await expect(pendingRow).toBeVisible();
@@ -187,6 +188,7 @@ test.describe('Admin admissions ward workflow', () => {
     await page.getByRole('button', { name: 'Approved' }).click();
     const approvedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Assign Bed' }) })
       .first();
     await expect(approvedRow).toBeVisible();
@@ -229,6 +231,7 @@ test.describe('Admin admissions ward workflow', () => {
 
     const activeBedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
       .first();
     await expect(activeBedRow).toBeVisible();
@@ -249,6 +252,7 @@ test.describe('Admin admissions ward workflow', () => {
 
     const postReleaseRow = page
       .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
       .first();
     await expect(postReleaseRow).toBeVisible();
@@ -269,6 +273,7 @@ test.describe('Admin admissions ward workflow', () => {
 
     const readOnlyRow = page
       .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ hasText: seeded.patientName })
       .filter({ hasText: /read-only/i })
       .first();
     await expect(readOnlyRow).toBeVisible();
