@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
+import { Input } from '@/shared/Input';
 import { StartVisitModal } from '@/app/reception/components/visit/StartVisitModal';
 import { VisitDetailsModal } from '@/app/reception/components/visit/VisitDetailsModal';
 import { VisitQueue } from '@/app/reception/components/visit/VisitQueue';
@@ -11,7 +12,11 @@ import { PatientRegistrationForm } from '@/app/reception/components/patient/Pati
 import { VisitResponse } from '@/shared/types';
 import { visitService } from '@/domains/visit/services/visitService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
-import { PurposeOfUse } from '@/shared/enums';
+import { PurposeOfUse, VisitServiceLine } from '@/shared/enums';
+import {
+  FollowUpListItem,
+  followUpService,
+} from '@/domains/followup/services/followupService';
 
 export default function ReceptionPage() {
   const [isStartVisitModalOpen, setIsStartVisitModalOpen] = useState(false);
@@ -32,6 +37,25 @@ export default function ReceptionPage() {
   });
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [followUps, setFollowUps] = useState<{
+    today: FollowUpListItem[];
+    tomorrow: FollowUpListItem[];
+  }>({
+    today: [],
+    tomorrow: [],
+  });
+  const [followUpsLoading, setFollowUpsLoading] = useState(false);
+  const [followUpsError, setFollowUpsError] = useState<string | null>(null);
+  const [followUpActionError, setFollowUpActionError] = useState<string | null>(null);
+  const [followUpActionSuccess, setFollowUpActionSuccess] = useState<string | null>(null);
+  const [followUpSearch, setFollowUpSearch] = useState('');
+  const [startingFollowUpId, setStartingFollowUpId] = useState<string | null>(null);
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
+  const [rescheduleTarget, setRescheduleTarget] = useState<FollowUpListItem | null>(null);
+  const [rescheduleDueAt, setRescheduleDueAt] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('Patient requested new date');
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   const handleVisitCreated = () => {
     setIsStartVisitModalOpen(false);
@@ -69,8 +93,136 @@ export default function ReceptionPage() {
     }
   };
 
+  const loadFollowUps = async () => {
+    try {
+      setFollowUpsLoading(true);
+      setFollowUpsError(null);
+      const data = await followUpService.getReceptionFollowUps();
+      setFollowUps({
+        today: data.today || [],
+        tomorrow: data.tomorrow || [],
+      });
+    } catch (error) {
+      console.error('Failed to load reception follow-ups:', error);
+      setFollowUpsError('Unable to load follow-up worklist.');
+    } finally {
+      setFollowUpsLoading(false);
+    }
+  };
+
+  const openRescheduleModal = (item: FollowUpListItem) => {
+    const suggested = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    suggested.setHours(10, 0, 0, 0);
+    setRescheduleTarget(item);
+    setRescheduleDueAt(suggested.toISOString().slice(0, 16));
+    setRescheduleReason('Patient requested new date');
+    setRescheduleError(null);
+    setRescheduleModalOpen(true);
+  };
+
+  const closeRescheduleModal = () => {
+    setRescheduleModalOpen(false);
+    setRescheduleTarget(null);
+    setRescheduleError(null);
+    setRescheduleSubmitting(false);
+  };
+
+  const handleStartLinkedFollowUpVisit = async (item: FollowUpListItem) => {
+    try {
+      setStartingFollowUpId(item.id);
+      setFollowUpActionError(null);
+      setFollowUpActionSuccess(null);
+
+      const activeVisit = await visitService.getActiveVisit(item.patient_id_canonical);
+      if (activeVisit) {
+        setFollowUpActionError(
+          `Active visit already exists for ${item.patient_name || 'this patient'}. Continue the active visit instead of starting another one.`
+        );
+        setSelectedVisitId(activeVisit.id);
+        setIsDetailsModalOpen(true);
+        return;
+      }
+
+      const visit = await visitService.startVisit({
+        patient_id: item.patient_id_canonical,
+        assigned_doctor_id: item.owner_user_id,
+        service_line: item.recommended_service_line as VisitServiceLine,
+        linked_follow_up_id: item.id,
+      });
+      setFollowUpActionSuccess(
+        `Linked visit started for ${item.patient_name || 'patient'} (${visit.id.slice(
+          0,
+          8
+        )}...).`
+      );
+      setRefreshQueue((prev) => prev + 1);
+      await loadFollowUps();
+    } catch (error: unknown) {
+      const detail =
+        typeof error === 'object' &&
+        error &&
+        'response' in error &&
+        typeof (error as { response?: { data?: { detail?: string } } }).response?.data
+          ?.detail === 'string'
+          ? (error as { response?: { data?: { detail?: string } } }).response!.data!
+              .detail!
+          : null;
+      setFollowUpActionError(detail || 'Unable to start linked follow-up visit.');
+    } finally {
+      setStartingFollowUpId(null);
+    }
+  };
+
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleTarget) return;
+    try {
+      setRescheduleSubmitting(true);
+      setRescheduleError(null);
+      await followUpService.rescheduleFollowUp(rescheduleTarget.id, {
+        due_at: new Date(rescheduleDueAt).toISOString(),
+        reason: rescheduleReason,
+        justification: 'Reception follow-up reschedule',
+      });
+      closeRescheduleModal();
+      setFollowUpActionSuccess(
+        `Follow-up rescheduled for ${rescheduleTarget.patient_name || 'patient'}.`
+      );
+      await loadFollowUps();
+    } catch (error: unknown) {
+      const detail =
+        typeof error === 'object' &&
+        error &&
+        'response' in error &&
+        typeof (error as { response?: { data?: { detail?: string } } }).response?.data
+          ?.detail === 'string'
+          ? (error as { response?: { data?: { detail?: string } } }).response!.data!
+              .detail!
+          : null;
+      setRescheduleError(detail || 'Unable to reschedule follow-up.');
+    } finally {
+      setRescheduleSubmitting(false);
+    }
+  };
+
   const maskId = (value?: string | null) =>
     value ? `${value.substring(0, 8)}...` : 'Unknown';
+
+  const filterFollowUps = (items: FollowUpListItem[]) => {
+    const term = followUpSearch.trim().toLowerCase();
+    if (!term) return items;
+    return items.filter((item) => {
+      const patientName = (item.patient_name || '').toLowerCase();
+      const patientMrn = (item.patient_mrn || '').toLowerCase();
+      const patientId = item.patient_id_canonical.toLowerCase();
+      const reason = (item.reason || '').toLowerCase();
+      return (
+        patientName.includes(term) ||
+        patientMrn.includes(term) ||
+        patientId.includes(term) ||
+        reason.includes(term)
+      );
+    });
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -98,6 +250,19 @@ export default function ReceptionPage() {
     loadRecent();
     return () => {
       isMounted = false;
+    };
+  }, [refreshQueue]);
+
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    void loadFollowUps();
+    intervalId = setInterval(() => {
+      void loadFollowUps();
+    }, 60000);
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
   }, [refreshQueue]);
 
@@ -148,6 +313,12 @@ export default function ReceptionPage() {
     }, 12000);
     return () => clearTimeout(timer);
   }, [recentMrnIssued]);
+
+  useEffect(() => {
+    if (!followUpActionSuccess) return;
+    const timer = setTimeout(() => setFollowUpActionSuccess(null), 9000);
+    return () => clearTimeout(timer);
+  }, [followUpActionSuccess]);
 
   const formatStat = (value: number) => (statsLoading ? '—' : value);
 
@@ -278,6 +449,17 @@ export default function ReceptionPage() {
           </div>
         )}
 
+        {followUpActionError && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {followUpActionError}
+          </div>
+        )}
+        {followUpActionSuccess && (
+          <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {followUpActionSuccess}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
             <Card title="Quick Actions" titleClassName="text-[#0B4DA2]">
@@ -346,6 +528,109 @@ export default function ReceptionPage() {
                 </div>
               )}
             </Card>
+
+            <Card title="Follow-Ups" titleClassName="text-[#0B4DA2]" className="mt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs text-slate-500">
+                  Start linked visits and reschedule from existing follow-up records.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void loadFollowUps()}
+                  disabled={followUpsLoading}
+                >
+                  {followUpsLoading ? 'Refreshing...' : 'Refresh'}
+                </Button>
+              </div>
+              <Input
+                label="Quick Search"
+                placeholder="Name, MRN, patient ID, reason..."
+                value={followUpSearch}
+                onChange={(event) => setFollowUpSearch(event.target.value)}
+              />
+
+              {followUpsError && (
+                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {followUpsError}
+                </div>
+              )}
+
+              {followUpsLoading && !followUpsError ? (
+                <div className="space-y-2">
+                  <div className="shimmer h-10 rounded"></div>
+                  <div className="shimmer h-10 rounded"></div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {[
+                    {
+                      key: 'today',
+                      label: 'Today',
+                      items: filterFollowUps(followUps.today),
+                    },
+                    {
+                      key: 'tomorrow',
+                      label: 'Tomorrow',
+                      items: filterFollowUps(followUps.tomorrow),
+                    },
+                  ].map((group) => (
+                    <div key={group.key}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-slate-900">{group.label}</p>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                          {group.items.length}
+                        </span>
+                      </div>
+                      {group.items.length === 0 ? (
+                        <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                          No follow-ups due.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {group.items.slice(0, 6).map((item) => (
+                            <div
+                              key={item.id}
+                              className="rounded-md border border-slate-200 bg-white px-3 py-2"
+                            >
+                              <p className="text-sm font-semibold text-slate-900">
+                                {item.patient_name || 'Unknown patient'}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {item.patient_mrn
+                                  ? `MRN ${item.patient_mrn}`
+                                  : `Patient ${maskId(item.patient_id_canonical)}`}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-600">{item.reason}</p>
+                              <p className="text-xs text-slate-500">
+                                Due {new Date(item.due_at).toLocaleString()}
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  isLoading={startingFollowUpId === item.id}
+                                  onClick={() => void handleStartLinkedFollowUpVisit(item)}
+                                >
+                                  Start Visit (Link)
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => openRescheduleModal(item)}
+                                >
+                                  Reschedule
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
           </div>
 
           <div className="lg:col-span-2">
@@ -377,6 +662,64 @@ export default function ReceptionPage() {
           }}
           purposeOfUse={PurposeOfUse.OPERATIONS}
         />
+
+        {rescheduleModalOpen && rescheduleTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-900">Reschedule Follow-Up</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                {rescheduleTarget.patient_name || 'Patient'} •{' '}
+                {rescheduleTarget.patient_mrn
+                  ? `MRN ${rescheduleTarget.patient_mrn}`
+                  : `ID ${maskId(rescheduleTarget.patient_id_canonical)}`}
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    New Due Date
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={rescheduleDueAt}
+                    onChange={(event) => setRescheduleDueAt(event.target.value)}
+                    className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Reason
+                  </label>
+                  <textarea
+                    value={rescheduleReason}
+                    onChange={(event) => setRescheduleReason(event.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    rows={3}
+                  />
+                </div>
+                {rescheduleError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {rescheduleError}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <Button variant="secondary" onClick={closeRescheduleModal}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  isLoading={rescheduleSubmitting}
+                  disabled={!rescheduleDueAt || rescheduleReason.trim().length < 2}
+                  onClick={() => void handleRescheduleSubmit()}
+                >
+                  Save Reschedule
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       <footer className="bg-white border-t mt-8 py-4">

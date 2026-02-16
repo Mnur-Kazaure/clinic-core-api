@@ -9,6 +9,7 @@ from app.models.maternity_postnatal_note import MaternityPostnatalNote
 from app.models.family_planning_event import FamilyPlanningEvent
 from app.models.pregnancy_episode import PregnancyEpisode
 from app.models.visit import Visit
+from app.services.follow_up_workflow_service import FollowUpWorkflowService
 from app.shared.enums import RecordStatus, VisitServiceLine, VisitStatus
 
 
@@ -109,6 +110,15 @@ class MaternityService:
         if payload.action == "SIGN":
             record.record_status = RecordStatus.SIGNED
             record.signed_at = now
+            FollowUpWorkflowService(self.db).complete_linked_follow_up_on_visit_sign(
+                clinic_id=clinic_id,
+                actor_id=actor_id,
+                visit_id=visit.id,
+                patient_id_canonical=visit.patient_id,
+                linked_follow_up_id=visit.linked_follow_up_id,
+                signed_at=now,
+                commit=False,
+            )
         else:
             record.record_status = RecordStatus.DRAFT
 

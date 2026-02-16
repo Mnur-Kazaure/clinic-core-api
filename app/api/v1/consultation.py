@@ -9,6 +9,7 @@ from app.core.rbac import require_doctor
 from app.models.visit import Visit
 from app.models.consultation import Consultation
 from app.schemas.consultation import (
+    ConsultationCompleteRequest,
     ConsultationCreateRequest,
     ConsultationResponse,
     ConsultationUpdateRequest,
@@ -156,6 +157,7 @@ def update_consultation(
 )
 def complete_consultation(
     consultation_id: UUID,
+    payload: ConsultationCompleteRequest | None = None,
     db=Depends(get_db),
     current_user=Depends(get_current_user),
     consultation=Depends(require_consultation_access),
@@ -165,4 +167,5 @@ def complete_consultation(
     return service.complete_consultation(
         consultation,
         current_user,
+        linked_follow_up_id=payload.linked_follow_up_id if payload else None,
     )

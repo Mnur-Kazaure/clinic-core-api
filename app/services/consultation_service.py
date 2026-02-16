@@ -1,5 +1,6 @@
 # app/services/consultation_service.py
 from datetime import datetime, timezone
+from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.visit import Visit
@@ -13,12 +14,16 @@ from app.core.guards.consultation_guards import (
 )
 from app.shared.enums import RecordStatus
 from app.services.event_service import EventService
+from app.services.follow_up_service import RecallSuggestionService
+from app.services.follow_up_workflow_service import FollowUpWorkflowService
 
 
 class ConsultationService:
     def __init__(self, db: Session):
         self.db = db
         self.event_service = EventService(db)
+        self.recall_suggestion_service = RecallSuggestionService(db)
+        self.follow_up_workflow_service = FollowUpWorkflowService(db)
 
     # ─────────────────────────────────────────
     # START CONSULTATION
@@ -144,6 +149,8 @@ class ConsultationService:
         self,
         consultation: Consultation,
         user,
+        *,
+        linked_follow_up_id: UUID | None = None,
     ) -> Consultation:
         """
         Completes a consultation.
@@ -157,11 +164,32 @@ class ConsultationService:
         ensure_consultation_not_completed(consultation)
 
         mark_consultation_completed(consultation)
+        signed_at = datetime.now(timezone.utc)
         consultation.record_status = RecordStatus.SIGNED
-        consultation.signed_at = datetime.now(timezone.utc)
+        consultation.signed_at = signed_at
+
+        if linked_follow_up_id is not None:
+            consultation.visit.linked_follow_up_id = linked_follow_up_id
+
+        self.follow_up_workflow_service.complete_linked_follow_up_on_visit_sign(
+            clinic_id=consultation.visit.clinic_id,
+            actor_id=user.id,
+            visit_id=consultation.visit.id,
+            patient_id_canonical=consultation.visit.patient_id,
+            linked_follow_up_id=consultation.visit.linked_follow_up_id,
+            signed_at=signed_at,
+            commit=False,
+        )
 
         self.db.commit()
         self.db.refresh(consultation)
+
+        suggestions = self.recall_suggestion_service.resolve(
+            clinic_id=consultation.visit.clinic_id,
+            patient_id=consultation.visit.patient_id,
+            diagnosis_text=consultation.diagnosis,
+        )
+        setattr(consultation, "recall_suggestions", suggestions)
 
         self.event_service.emit(
             event_type="ENTRY_SIGNED",

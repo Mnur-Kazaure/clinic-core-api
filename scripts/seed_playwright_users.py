@@ -2,7 +2,7 @@
 
 This script is idempotent:
 - creates/updates one clinic
-- creates/updates RECEPTION, CHEW, MIDWIFE users by email
+- creates/updates RECEPTION, CHEW, MIDWIFE, ADMIN users by email
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--chew-password", required=True)
     parser.add_argument("--midwife-email", required=True)
     parser.add_argument("--midwife-password", required=True)
+    parser.add_argument("--admin-email", default=None)
+    parser.add_argument("--admin-password", default=None)
     return parser.parse_args()
 
 
@@ -71,6 +73,11 @@ def _derive_colleague_email(email: str) -> str:
     return f"{local}+colleague@{domain}"
 
 
+def _derive_admin_email(email: str) -> str:
+    local, domain = email.split("@", 1)
+    return f"{local}+admin@{domain}"
+
+
 def _resolve_role_value(primary: str, fallback: str) -> str:
     """Use newer role when available, otherwise fall back for older branches."""
     role = getattr(UserRole, primary, None)
@@ -81,6 +88,8 @@ def _resolve_role_value(primary: str, fallback: str) -> str:
 
 def main() -> None:
     args = _parse_args()
+    admin_email = args.admin_email or _derive_admin_email(args.reception_email)
+    admin_password = args.admin_password or args.reception_password
     db = SessionLocal()
     try:
         clinic = db.query(Clinic).filter(Clinic.name == args.clinic_name).first()
@@ -130,6 +139,15 @@ def main() -> None:
             password=args.midwife_password,
             full_name="E2E Midwife Colleague",
             role_value=midwife_role_value,
+        )
+        clinic_admin_role_value = _resolve_role_value("CLINIC_ADMIN", "ADMIN")
+        _upsert_user(
+            db,
+            clinic_id=clinic.id,
+            email=admin_email,
+            password=admin_password,
+            full_name="E2E Clinic Admin",
+            role_value=clinic_admin_role_value,
         )
 
         db.commit()

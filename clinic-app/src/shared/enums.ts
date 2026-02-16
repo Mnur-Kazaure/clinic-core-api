@@ -13,6 +13,7 @@ export enum UserRole {
 
 export enum VisitStatus {
   REGISTERED = 'REGISTERED',
+  // Deprecated legacy value. Triage progression is tracked by VisitTriageState.
   TRIAGED = 'TRIAGED',
   IN_CONSULTATION = 'IN_CONSULTATION',
   LAB_REQUESTED = 'LAB_REQUESTED',
@@ -26,6 +27,12 @@ export enum VisitServiceLine {
   OPD = 'OPD',
   ANC = 'ANC',
   MATERNITY = 'MATERNITY',
+}
+
+export enum VisitTriageState {
+  NOT_REQUIRED = 'NOT_REQUIRED',
+  PENDING = 'PENDING',
+  TRIAGED = 'TRIAGED',
 }
 
 export enum PrescriptionStatus {

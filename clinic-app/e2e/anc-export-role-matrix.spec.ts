@@ -4,6 +4,28 @@ const apiBase = process.env.E2E_API_BASE_URL || 'http://localhost:8000/api';
 
 type Credentials = { email: string; password: string };
 
+function ensureSafeE2EContext(): void {
+  const allowSeed = process.env.E2E_ALLOW_DATA_SEED === 'true';
+  const allowNonLocalApi = process.env.E2E_ALLOW_NONLOCAL_API === 'true';
+  const isLocalApi =
+    apiBase.startsWith('http://localhost:') ||
+    apiBase.startsWith('http://127.0.0.1:');
+
+  if (!allowSeed) {
+    test.skip(
+      true,
+      'Set E2E_ALLOW_DATA_SEED=true to allow E2E tests to create patient/visit/admission records.'
+    );
+  }
+
+  if (!isLocalApi && !allowNonLocalApi) {
+    test.skip(
+      true,
+      `Refusing to seed E2E records on non-local API (${apiBase}). Set E2E_ALLOW_NONLOCAL_API=true to override.`
+    );
+  }
+}
+
 function deriveColleagueEmail(email: string): string {
   const [local, domain] = email.split('@');
   return `${local}+colleague@${domain}`;
@@ -15,6 +37,8 @@ function requireCredentials(): {
   chewColleague: Credentials;
   midwife: Credentials;
 } {
+  ensureSafeE2EContext();
+
   const receptionEmail = process.env.E2E_RECEPTION_EMAIL || '';
   const receptionPassword = process.env.E2E_RECEPTION_PASSWORD || '';
   const chewEmail = process.env.E2E_CHEW_EMAIL || '';
@@ -76,8 +100,9 @@ async function seedAncVisitForChew(
   const chewUser = await getCurrentUser(request);
 
   await loginApi(request, receptionCreds);
+  const runId = process.env.E2E_RUN_ID || new Date().toISOString().slice(0, 10);
   const unique = Date.now();
-  const patientName = `E2E ANC ${unique}`;
+  const patientName = `E2E ${runId} ANC ${unique}`;
   const createPatientResponse = await request.post(`${apiBase}/v1/patient`, {
     data: {
       full_name: patientName,
@@ -164,7 +189,9 @@ test.describe('ANC export role matrix', () => {
     await loginApi(page.request, creds.chew);
     await page.goto('/anc');
 
-    await expect(page.getByRole('heading', { name: 'ANC Dashboard' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /ANC (Dashboard|Care Workspace)/i })
+    ).toBeVisible();
 
     await page.getByRole('button', { name: new RegExp(seeded.patientName) }).click();
     await page.getByRole('button', { name: 'Export PDF' }).click();
@@ -195,13 +222,12 @@ test.describe('ANC export role matrix', () => {
 
     await loginApi(page.request, creds.chew);
     await page.goto('/anc');
-    await expect(page.getByRole('heading', { name: 'ANC Dashboard' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /ANC (Dashboard|Care Workspace)/i })
+    ).toBeVisible();
 
     await page.getByRole('button', { name: new RegExp(seeded.patientName) }).click();
-    await page.getByRole('button', { name: 'Reassign Owner' }).click();
-    await expect(page.getByRole('heading', { name: 'Reassign ANC Owner' })).toBeVisible();
-
-    await page.locator('select').filter({ hasText: 'Select CHEW' }).selectOption({
+    await page.getByRole('combobox').first().selectOption({
       label: 'E2E CHEW Colleague',
     });
     await page.getByRole('button', { name: /^Reassign$/ }).click();
@@ -212,7 +238,9 @@ test.describe('ANC export role matrix', () => {
 
     await loginApi(page.request, creds.chewColleague);
     await page.goto('/anc');
-    await expect(page.getByRole('heading', { name: 'ANC Dashboard' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /ANC (Dashboard|Care Workspace)/i })
+    ).toBeVisible();
     await expect(
       page.getByRole('button', { name: new RegExp(seeded.patientName) })
     ).toBeVisible({ timeout: 15_000 });
@@ -227,18 +255,15 @@ test.describe('ANC export role matrix', () => {
 
     await loginApi(page.request, creds.chew);
     await page.goto('/anc');
-    await expect(page.getByRole('heading', { name: 'ANC Dashboard' })).toBeVisible();
-
-    await page.getByRole('button', { name: new RegExp(seeded.patientName) }).click();
-    await page.getByRole('button', { name: 'Send to Maternity' }).click();
     await expect(
-      page.getByRole('heading', { name: 'Send Visit to Maternity' })
+      page.getByRole('heading', { name: /ANC (Dashboard|Care Workspace)/i })
     ).toBeVisible();
 
-    await page.locator('select').filter({ hasText: 'Select Midwife' }).selectOption({
+    await page.getByRole('button', { name: new RegExp(seeded.patientName) }).click();
+    await page.getByRole('combobox').nth(1).selectOption({
       label: 'E2E Midwife',
     });
-    await page.getByRole('button', { name: 'Confirm Send' }).click();
+    await page.getByRole('button', { name: /^Send$/ }).click();
 
     await expect(
       page.getByRole('button', { name: new RegExp(seeded.patientName) })
@@ -247,7 +272,7 @@ test.describe('ANC export role matrix', () => {
     await loginApi(page.request, creds.midwife);
     await page.goto('/maternity');
     await expect(
-      page.getByRole('heading', { name: 'Maternity Dashboard' })
+      page.getByRole('heading', { name: /Maternity (Dashboard|Care Workspace)/i })
     ).toBeVisible();
     await expect(
       page.getByRole('button', { name: new RegExp(seeded.patientName) })

@@ -7,7 +7,12 @@ from sqlalchemy import Enum, ForeignKey, DateTime, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.shared.enums import VisitStatus, VisitServiceLine
+from app.shared.enums import (
+    ClinicalPriorityLevel,
+    VisitServiceLine,
+    VisitStatus,
+    VisitTriageState,
+)
 
 
 class Visit(Base):
@@ -34,6 +39,11 @@ class Visit(Base):
         nullable=False,
     )
 
+    linked_follow_up_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("follow_ups.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     status: Mapped[VisitStatus] = mapped_column(
         Enum(VisitStatus, name="visit_status"),
         nullable=False,
@@ -44,6 +54,28 @@ class Visit(Base):
         nullable=False,
         default=VisitServiceLine.OPD,
         server_default=VisitServiceLine.OPD.value,
+    )
+
+    triage_state: Mapped[VisitTriageState] = mapped_column(
+        Enum(VisitTriageState, name="visit_triage_state"),
+        nullable=False,
+        default=VisitTriageState.PENDING,
+        server_default=VisitTriageState.PENDING.value,
+    )
+
+    triage_acuity: Mapped[ClinicalPriorityLevel | None] = mapped_column(
+        Enum(ClinicalPriorityLevel, name="clinical_priority_level"),
+        nullable=True,
+    )
+
+    triaged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    triaged_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
     )
 
     started_at: Mapped[datetime] = mapped_column(

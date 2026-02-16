@@ -15,6 +15,12 @@ VISIT_ACCESS_ROLES = {
     UserRole.ADMIN,
 }
 
+TRIAGE_STAFF_ROLES = {
+    UserRole.CHEW,
+    UserRole.MIDWIFE,
+    UserRole.DOCTOR,
+}
+
 
 def require_visit_access(user=Depends(get_current_user)):
     # 🔒 Internal system bypass (not HTTP-facing)
@@ -25,6 +31,15 @@ def require_visit_access(user=Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User not allowed to access visit operations",
+        )
+    return user
+
+
+def require_triage_staff(user=Depends(get_current_user)):
+    if user.role not in TRIAGE_STAFF_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Clinical triage access required",
         )
     return user
 

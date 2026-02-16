@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { consultationService } from '@/domains/consultation/services/consultationService';
-import { ConsultationResponse } from '@/shared/types';
+import { followUpService, RecallIntervalUnit } from '@/domains/followup/services/followupService';
+import { ConsultationResponse, RecallSuggestionDTO } from '@/shared/types';
 import { jsonUtils } from '@/shared/utils/json';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
@@ -12,9 +13,11 @@ interface ConsultationModalProps {
   visitId: string;
   visitSummary?: {
     patientName?: string | null;
+    patientId?: string | null;
     status?: string | null;
     mrn?: string | null;
     intakeEmergencyFlag?: boolean | null;
+    linkedFollowUpId?: string | null;
   };
   isOpen: boolean;
   onClose: () => void;
@@ -71,6 +74,14 @@ export function ConsultationModal({
   const [doctorFullName, setDoctorFullName] = useState('');
   const [isCompleted, setIsCompleted] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [recallSuggestions, setRecallSuggestions] = useState<RecallSuggestionDTO[]>([]);
+  const [recallActionError, setRecallActionError] = useState<string | null>(null);
+  const [recallActionSuccess, setRecallActionSuccess] = useState<string | null>(null);
+  const [recallSubmittingId, setRecallSubmittingId] = useState<string | null>(null);
+  const [adjustingSuggestionId, setAdjustingSuggestionId] = useState<string | null>(null);
+  const [overrideIntervalValue, setOverrideIntervalValue] = useState<string>('');
+  const [overrideIntervalUnit, setOverrideIntervalUnit] =
+    useState<RecallIntervalUnit>('MONTHS');
   const canStartConsultation =
     !visitSummary?.status ||
     ['IN_CONSULTATION', 'LAB_REQUESTED', 'LAB_COMPLETED', 'PHARMACY_PENDING'].includes(
@@ -96,6 +107,7 @@ export function ConsultationModal({
     setNotes(consultationData.notes || '');
     setDoctorFullName(consultationData.doctor_full_name || '');
     setIsCompleted(consultationData.completed_at !== null);
+    setRecallSuggestions(consultationData.recall_suggestions || []);
     setIsDirty(false);
   }, []);
 
@@ -227,10 +239,14 @@ export function ConsultationModal({
 
         if (complete) {
           const completed = await consultationService.completeConsultation(
-            consultation.id
+            consultation.id,
+            { linked_follow_up_id: visitSummary?.linkedFollowUpId || undefined }
           );
           setConsultation(completed);
           setIsCompleted(true);
+          setRecallSuggestions(completed.recall_suggestions || []);
+          setRecallActionError(null);
+          setRecallActionSuccess(null);
 
           if (onComplete) {
             onComplete(completed.id);
@@ -252,10 +268,14 @@ export function ConsultationModal({
 
         if (complete) {
           const completed = await consultationService.completeConsultation(
-            newConsultation.id
+            newConsultation.id,
+            { linked_follow_up_id: visitSummary?.linkedFollowUpId || undefined }
           );
           setConsultation(completed);
           setIsCompleted(true);
+          setRecallSuggestions(completed.recall_suggestions || []);
+          setRecallActionError(null);
+          setRecallActionSuccess(null);
 
           if (onComplete) {
             onComplete(completed.id);
@@ -328,6 +348,68 @@ export function ConsultationModal({
       }
     }
     onClose();
+  };
+
+  const removeSuggestion = (conditionProfileId: string) => {
+    setRecallSuggestions((prev) =>
+      prev.filter((item) => item.condition_profile_id !== conditionProfileId)
+    );
+    if (adjustingSuggestionId === conditionProfileId) {
+      setAdjustingSuggestionId(null);
+    }
+  };
+
+  const handleStartRecall = async (
+    suggestion: RecallSuggestionDTO,
+    options?: { intervalValueOverride?: number; intervalUnitOverride?: RecallIntervalUnit }
+  ) => {
+    if (!visitSummary?.patientId) {
+      setRecallActionError('Patient context is missing for recall creation.');
+      return;
+    }
+    try {
+      setRecallActionError(null);
+      setRecallActionSuccess(null);
+      setRecallSubmittingId(suggestion.condition_profile_id);
+      await followUpService.createChronicRecall({
+        patient_id: visitSummary.patientId,
+        condition_profile_id: suggestion.condition_profile_id,
+        origin_visit_id: visitId,
+        interval_value_override: options?.intervalValueOverride,
+        interval_unit_override: options?.intervalUnitOverride,
+        justification: 'Consultation recall suggestion accepted',
+      });
+      removeSuggestion(suggestion.condition_profile_id);
+      setRecallActionSuccess(`${suggestion.display_name} recall started.`);
+      setOverrideIntervalValue('');
+      setAdjustingSuggestionId(null);
+    } catch (err: unknown) {
+      const response = getErrorResponse(err);
+      if (response?.status === 409) {
+        setRecallActionError('An active recall already exists for this condition.');
+        removeSuggestion(suggestion.condition_profile_id);
+        return;
+      }
+      if (response?.status === 403) {
+        setRecallActionError('Recall creation requires assigned active visit context.');
+        return;
+      }
+      setRecallActionError('Unable to start recall. Please try again.');
+    } finally {
+      setRecallSubmittingId(null);
+    }
+  };
+
+  const handleAdjustRecall = async (suggestion: RecallSuggestionDTO) => {
+    const parsedValue = Number.parseInt(overrideIntervalValue, 10);
+    if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+      setRecallActionError('Enter a valid interval value (minimum 1).');
+      return;
+    }
+    await handleStartRecall(suggestion, {
+      intervalValueOverride: parsedValue,
+      intervalUnitOverride: overrideIntervalUnit,
+    });
   };
 
   if (!isOpen) return null;
@@ -554,6 +636,136 @@ export function ConsultationModal({
               {isCompleted && (
                 <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
                   Consultation is completed and locked for edits.
+                </div>
+              )}
+
+              {isCompleted && recallSuggestions.length > 0 && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-emerald-900">
+                      Standing Recall Suggestions
+                    </h3>
+                    <span className="text-xs text-emerald-700">
+                      Structured-first, fallback-aware
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-emerald-800">
+                    Choose whether to start long-term recall for detected chronic conditions.
+                  </p>
+
+                  {recallActionError && (
+                    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {recallActionError}
+                    </div>
+                  )}
+                  {recallActionSuccess && (
+                    <div className="mt-3 rounded-md border border-emerald-300 bg-emerald-100 px-3 py-2 text-sm text-emerald-800">
+                      {recallActionSuccess}
+                    </div>
+                  )}
+
+                  <div className="mt-3 space-y-3">
+                    {recallSuggestions.map((suggestion) => (
+                      <div
+                        key={suggestion.condition_profile_id}
+                        className="rounded-md border border-emerald-200 bg-white p-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Chronic condition detected: {suggestion.display_name}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              Suggested interval: {suggestion.default_interval_value}{' '}
+                              {suggestion.default_interval_unit.toLowerCase()} • Confidence{' '}
+                              {suggestion.confidence}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              isLoading={
+                                recallSubmittingId === suggestion.condition_profile_id
+                              }
+                              disabled={saving || recallSubmittingId !== null}
+                              onClick={() => handleStartRecall(suggestion)}
+                            >
+                              Start Recall
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={saving || recallSubmittingId !== null}
+                              onClick={() => {
+                                setRecallActionError(null);
+                                setRecallActionSuccess(null);
+                                setAdjustingSuggestionId((prev) =>
+                                  prev === suggestion.condition_profile_id
+                                    ? null
+                                    : suggestion.condition_profile_id
+                                );
+                                setOverrideIntervalValue(
+                                  String(suggestion.default_interval_value)
+                                );
+                                setOverrideIntervalUnit(suggestion.default_interval_unit);
+                              }}
+                            >
+                              Adjust Interval
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={saving || recallSubmittingId !== null}
+                              onClick={() => removeSuggestion(suggestion.condition_profile_id)}
+                            >
+                              Not Now
+                            </Button>
+                          </div>
+                        </div>
+
+                        {adjustingSuggestionId === suggestion.condition_profile_id && (
+                          <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                              Adjust recall interval
+                            </p>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-[120px_1fr_auto]">
+                              <Input
+                                value={overrideIntervalValue}
+                                onChange={(event) =>
+                                  setOverrideIntervalValue(event.target.value)
+                                }
+                                placeholder="Value"
+                                disabled={recallSubmittingId !== null}
+                              />
+                              <select
+                                value={overrideIntervalUnit}
+                                disabled={recallSubmittingId !== null}
+                                onChange={(event) =>
+                                  setOverrideIntervalUnit(
+                                    event.target.value as RecallIntervalUnit
+                                  )
+                                }
+                                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B4DA2]"
+                              >
+                                <option value="DAYS">Days</option>
+                                <option value="WEEKS">Weeks</option>
+                                <option value="MONTHS">Months</option>
+                              </select>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                disabled={recallSubmittingId !== null}
+                                onClick={() => handleAdjustRecall(suggestion)}
+                              >
+                                Confirm
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
