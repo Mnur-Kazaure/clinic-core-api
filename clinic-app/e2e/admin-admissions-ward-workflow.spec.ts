@@ -287,18 +287,26 @@ test.describe('Admin admissions ward workflow', () => {
       (await activeBedRowForPatient.count()) > 0 ? activeBedRowForPatient : activeBedRowFallback;
     await expect(activeBedRow).toBeVisible();
     await activeBedRow.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Release bed (keep admission active)' })
-    ).toBeVisible();
-    await page
+    const releaseModal = page.getByRole('dialog', {
+      name: /Release bed \(keep admission active\)/i,
+    });
+    await expect(releaseModal).toBeVisible();
+    await releaseModal
       .getByPlaceholder('Patient moved, temporary discharge, cleaning...')
       .fill('Temporary bed release');
-    await page
+    await releaseModal
       .locator(
         'label:has-text("I confirm this patient should no longer hold the current bed.") input[type="checkbox"]'
       )
       .check();
-    await page.getByRole('button', { name: 'Release Bed (Keep Active)' }).last().click();
+    const releaseResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/v1\/admissions\/.+\/bed\/release$/.test(response.url()) &&
+        response.ok()
+    );
+    await releaseModal.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
+    await releaseResponsePromise;
     await expect(page.getByText(/Bed released for/).first()).toBeVisible();
 
     const postReleaseRowForPatient = page
@@ -316,18 +324,26 @@ test.describe('Admin admissions ward workflow', () => {
         : postReleaseRowFallback;
     await expect(postReleaseRow).toBeVisible();
     await postReleaseRow.getByRole('button', { name: 'Discharge Admission' }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Discharge active admission' })
-    ).toBeVisible();
-    await page
+    const dischargeModal = page.getByRole('dialog', {
+      name: /Discharge active admission/i,
+    });
+    await expect(dischargeModal).toBeVisible();
+    await dischargeModal
       .getByPlaceholder('Clinical/operational discharge reason...')
       .fill('Discharge after workflow completion');
-    await page
+    await dischargeModal
       .locator(
         'label:has-text("I confirm this admission should be closed now.") input[type="checkbox"]'
       )
       .check();
-    await page.getByRole('button', { name: 'Discharge Admission' }).last().click();
+    const dischargeResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/v1\/admissions\/.+\/discharge$/.test(response.url()) &&
+        response.ok()
+    );
+    await dischargeModal.getByRole('button', { name: 'Discharge Admission' }).click();
+    await dischargeResponsePromise;
     await expect(page.getByText(/Admission discharged for/).first()).toBeVisible();
 
     const readOnlyRowForPatient = page
