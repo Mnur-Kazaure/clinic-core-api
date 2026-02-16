@@ -193,6 +193,12 @@ test.describe('Admin admissions ward workflow', () => {
         .first()
     ).toBeVisible();
 
+    // Force fresh queue+bed-board state so action readiness reflects new capacity.
+    await page.reload();
+    await expect(
+      page.getByRole('heading', { name: 'Admission Requests' })
+    ).toBeVisible({ timeout: 30_000 });
+
     await page.getByRole('button', { name: 'Approved' }).click();
     const approvedRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
