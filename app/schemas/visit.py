@@ -4,7 +4,13 @@ from typing import List, Optional, Literal
 from uuid import UUID
 from datetime import datetime
 
-from app.shared.enums import VisitStatus, VisitOverrideReasonCode, VisitServiceLine
+from app.shared.enums import (
+    ClinicalPriorityLevel,
+    VisitOverrideReasonCode,
+    VisitServiceLine,
+    VisitStatus,
+    VisitTriageState,
+)
 
 
 # ---------------------------
@@ -23,7 +29,12 @@ class VisitResponse(BaseModel):
     clinic_id: UUID
     status: VisitStatus
     service_line: VisitServiceLine
+    triage_state: VisitTriageState = VisitTriageState.PENDING
+    triage_acuity: Optional[ClinicalPriorityLevel] = None
+    triaged_at: Optional[datetime] = None
+    triaged_by: Optional[UUID] = None
     assigned_doctor_id: Optional[UUID]
+    linked_follow_up_id: Optional[UUID] = None
     has_active_admission: Optional[bool] = None
     version: int
 
@@ -90,6 +101,7 @@ class VisitCreateRequest(BaseModel):
     patient_id: UUID
     assigned_doctor_id: UUID
     service_line: VisitServiceLine = VisitServiceLine.OPD
+    linked_follow_up_id: Optional[UUID] = None
 
 
 class VisitCreateResponse(VisitResponse):

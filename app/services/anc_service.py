@@ -15,6 +15,7 @@ from app.models.pregnancy_previous_pregnancy import PregnancyPreviousPregnancy
 from app.models.visit import Visit
 from app.models.patient import Patient
 from app.services.access_log_service import AccessLogService
+from app.services.follow_up_workflow_service import FollowUpWorkflowService
 from app.shared.enums import (
     MRNStatus,
     PregnancyEpisodeStatus,
@@ -246,6 +247,15 @@ class ANCService:
         if payload.action == "SIGN":
             encounter.record_status = RecordStatus.SIGNED
             encounter.signed_at = now
+            FollowUpWorkflowService(self.db).complete_linked_follow_up_on_visit_sign(
+                clinic_id=clinic_id,
+                actor_id=actor_id,
+                visit_id=visit.id,
+                patient_id_canonical=visit.patient_id,
+                linked_follow_up_id=visit.linked_follow_up_id,
+                signed_at=now,
+                commit=False,
+            )
         else:
             encounter.record_status = RecordStatus.DRAFT
 

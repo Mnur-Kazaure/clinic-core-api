@@ -2,6 +2,7 @@
 import {
   PrescriptionFulfillmentType,
   PrescriptionStatus,
+  VisitTriageState,
   VisitStatus,
   VisitServiceLine,
 } from './enums';
@@ -67,6 +68,11 @@ export interface VisitResponse {
   assigned_doctor_id: string | null;
   service_line?: VisitServiceLine;
   status: VisitStatus;
+  triage_state?: VisitTriageState;
+  triage_acuity?: 'CRITICAL' | 'URGENT' | 'ROUTINE' | null;
+  triaged_at?: string | null;
+  triaged_by?: string | null;
+  linked_follow_up_id?: string | null;
   has_active_admission?: boolean | null;
   version: number;
   created_at: string;
@@ -86,6 +92,17 @@ export interface ConsultationResponse {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  recall_suggestions?: RecallSuggestionDTO[];
+}
+
+export interface RecallSuggestionDTO {
+  condition_profile_id: string;
+  condition_code: string;
+  display_name: string;
+  default_interval_value: number;
+  default_interval_unit: 'DAYS' | 'WEEKS' | 'MONTHS';
+  default_priority: 'ROUTINE' | 'IMPORTANT' | 'CRITICAL';
+  confidence: 'HIGH' | 'LOW';
 }
 
 export interface PrescriptionResponse {

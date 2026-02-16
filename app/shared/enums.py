@@ -10,6 +10,7 @@ from typing import Type, TypeVar
 
 class VisitStatus(str, Enum):
     REGISTERED = "REGISTERED"
+    # Deprecated legacy value. Triage lifecycle is tracked in VisitTriageState.
     TRIAGED = "TRIAGED"
     IN_CONSULTATION = "IN_CONSULTATION"
     LAB_REQUESTED = "LAB_REQUESTED"
@@ -23,6 +24,12 @@ class VisitServiceLine(str, Enum):
     OPD = "OPD"
     ANC = "ANC"
     MATERNITY = "MATERNITY"
+
+
+class VisitTriageState(str, Enum):
+    NOT_REQUIRED = "NOT_REQUIRED"
+    PENDING = "PENDING"
+    TRIAGED = "TRIAGED"
 
 
 class VisitOverrideReasonCode(str, Enum):
@@ -250,6 +257,58 @@ class FamilyPlanningCommodity(str, Enum):
     OTHER = "OTHER"
 
 # ------------------------------
+# Follow-up / Chronic Recall
+# ------------------------------
+
+
+class FollowUpPriority(str, Enum):
+    ROUTINE = "ROUTINE"
+    IMPORTANT = "IMPORTANT"
+    CRITICAL = "CRITICAL"
+
+
+class FollowUpType(str, Enum):
+    MANUAL = "MANUAL"
+    POST_DISCHARGE = "POST_DISCHARGE"
+    LAB_REVIEW = "LAB_REVIEW"
+    ANC_REVIEW = "ANC_REVIEW"
+    CHRONIC_RECALL = "CHRONIC_RECALL"
+
+
+class FollowUpStatus(str, Enum):
+    SCHEDULED = "SCHEDULED"
+    COMPLETED = "COMPLETED"
+    MISSED = "MISSED"
+    CANCELLED = "CANCELLED"
+
+
+class FollowUpGeneratedBy(str, Enum):
+    USER = "USER"
+    SYSTEM = "SYSTEM"
+
+
+class RecallIntervalUnit(str, Enum):
+    DAYS = "DAYS"
+    WEEKS = "WEEKS"
+    MONTHS = "MONTHS"
+
+
+class DiagnosisSystem(str, Enum):
+    ICD10 = "ICD10"
+    ICPC2 = "ICPC2"
+    LOCAL = "LOCAL"
+
+
+class DiagnosisMappingConfidence(str, Enum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+
+
+class RecallSuggestionConfidence(str, Enum):
+    HIGH = "HIGH"
+    LOW = "LOW"
+
+# ------------------------------
 # Clinical Priority
 # ------------------------------
 
@@ -267,6 +326,11 @@ class ClinicalPrioritySource(str, Enum):
 
 class TriageScaleVersion(str, Enum):
     PHC_V1 = "PHC_V1"
+
+
+class TriageAssessmentRecordStatus(str, Enum):
+    DRAFT = "DRAFT"
+    SIGNED = "SIGNED"
 
 
 class TriageComplaintSeverity(str, Enum):

@@ -71,6 +71,45 @@ export function AncDashboard() {
   }, [episodeState.refreshEpisode, visitsState.refreshTimeline]);
 
   useEffect(() => {
+    let isMounted = true;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const loadFollowUps = async () => {
+      try {
+        setFollowUpsLoading(true);
+        setFollowUpsError(null);
+        const data = await followUpService.getMyFollowUps();
+        if (!isMounted) return;
+        const ancOnly = (items: FollowUpListItem[]) =>
+          items.filter((item) => item.recommended_service_line === 'ANC');
+        setFollowUps({
+          overdue: ancOnly(data.overdue || []),
+          today: ancOnly(data.today || []),
+          upcoming: ancOnly(data.upcoming || []),
+        });
+      } catch {
+        if (isMounted) {
+          setFollowUpsError('Unable to load ANC follow-up worklist.');
+        }
+      } finally {
+        if (isMounted) {
+          setFollowUpsLoading(false);
+        }
+      }
+    };
+
+    void loadFollowUps();
+    intervalId = setInterval(() => {
+      void loadFollowUps();
+    }, 60000);
+
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
     const loadAssignableStaff = async () => {
       try {
         const staff = await userService.listAssignableStaff();
@@ -120,6 +159,34 @@ export function AncDashboard() {
     payload: Parameters<typeof episodeState.addPreviousPregnancy>[0]
   ) => {
     await episodeState.addPreviousPregnancy(payload);
+  };
+
+  const filterFollowUps = (items: FollowUpListItem[]) => {
+    const term = followUpSearch.trim().toLowerCase();
+    if (!term) return items;
+    return items.filter((item) => {
+      const patientName = (item.patient_name || '').toLowerCase();
+      const patientMrn = (item.patient_mrn || '').toLowerCase();
+      const patientId = item.patient_id_canonical.toLowerCase();
+      const reason = (item.reason || '').toLowerCase();
+      return (
+        patientName.includes(term) ||
+        patientMrn.includes(term) ||
+        patientId.includes(term) ||
+        reason.includes(term)
+      );
+    });
+  };
+
+  const handleOpenFollowUpItem = (item: FollowUpListItem) => {
+    setFollowUpActionError(null);
+    if (!item.active_visit_id) {
+      setFollowUpActionError(
+        'No active linked visit yet. Ask reception to start a linked follow-up visit.'
+      );
+      return;
+    }
+    queueState.setSelectedVisitId(item.active_visit_id);
   };
 
   const handleReassignVisit = async () => {
@@ -306,6 +373,107 @@ export function AncDashboard() {
             onReassign={handleReassignVisit}
             onSendToMaternity={handleSendToMaternity}
           />
+
+          <section className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">ANC Follow-Ups</p>
+                <p className="text-xs text-slate-500">
+                  Overdue, today, and upcoming follow-up obligations.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={followUpsLoading}
+                onClick={async () => {
+                  try {
+                    setFollowUpsLoading(true);
+                    setFollowUpsError(null);
+                    const data = await followUpService.getMyFollowUps();
+                    const ancOnly = (items: FollowUpListItem[]) =>
+                      items.filter((item) => item.recommended_service_line === 'ANC');
+                    setFollowUps({
+                      overdue: ancOnly(data.overdue || []),
+                      today: ancOnly(data.today || []),
+                      upcoming: ancOnly(data.upcoming || []),
+                    });
+                  } catch {
+                    setFollowUpsError('Unable to load ANC follow-up worklist.');
+                  } finally {
+                    setFollowUpsLoading(false);
+                  }
+                }}
+              >
+                {followUpsLoading ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </div>
+
+            <Input
+              label="Quick Search"
+              placeholder="Name, MRN, patient ID, reason..."
+              value={followUpSearch}
+              onChange={(event) => setFollowUpSearch(event.target.value)}
+            />
+
+            {followUpsError ? (
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {followUpsError}
+              </div>
+            ) : null}
+            {followUpActionError ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                {followUpActionError}
+              </div>
+            ) : null}
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              {[
+                { key: 'overdue', label: 'Overdue', items: filterFollowUps(followUps.overdue) },
+                { key: 'today', label: 'Today', items: filterFollowUps(followUps.today) },
+                {
+                  key: 'upcoming',
+                  label: 'Upcoming',
+                  items: filterFollowUps(followUps.upcoming),
+                },
+              ].map((group) => (
+                <div key={group.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      {group.label}
+                    </p>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-700">
+                      {group.items.length}
+                    </span>
+                  </div>
+                  {group.items.length === 0 ? (
+                    <p className="text-xs text-slate-500">No follow-ups.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {group.items.slice(0, 4).map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleOpenFollowUpItem(item)}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:border-slate-300"
+                        >
+                          <p className="text-xs font-semibold text-slate-900">
+                            {item.patient_name || 'Unknown patient'}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {item.patient_mrn
+                              ? `MRN ${item.patient_mrn}`
+                              : `ID ${item.patient_id_canonical.slice(0, 8)}...`}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600">{item.reason}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
 
           <VisitTimeline
             timeline={visitsState.timeline}

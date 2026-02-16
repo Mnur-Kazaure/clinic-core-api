@@ -3,7 +3,9 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.follow_up import RecallSuggestionItem
 
 
 # ---------------------------
@@ -26,6 +28,10 @@ class ConsultationUpdateRequest(BaseModel):
     doctor_full_name: Optional[str] = None
 
 
+class ConsultationCompleteRequest(BaseModel):
+    linked_follow_up_id: UUID | None = None
+
+
 # ---------------------------
 # Read / Response
 # ---------------------------
@@ -46,5 +52,6 @@ class ConsultationResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    recall_suggestions: list[RecallSuggestionItem] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)

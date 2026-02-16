@@ -78,11 +78,12 @@ export const consultationService = {
   },
 
   async completeConsultation(
-    consultationId: string
+    consultationId: string,
+    payload?: { linked_follow_up_id?: string | null }
   ): Promise<ConsultationResponse> {
     const response = await client.post(
       `/v1/consultations/${consultationId}/complete`,
-      {}
+      payload || {}
     );
     return response.data;
   },

@@ -16,8 +16,11 @@ from app.schemas.visit import (
 )
 from app.schemas.triage import (
     TriageAssessmentResponse,
+    TriageDraftRequest,
+    TriageDraftResponse,
     TriageFinalizeRequest,
     TriageFinalizeResponse,
+    TriageSignRequest,
     TriageSupersedeRequest,
 )
 from app.services.visit.service import VisitService
@@ -26,7 +29,13 @@ from app.services.pharmacy_service import PharmacyService
 from app.services.access_log_service import AccessLogService
 from app.core.dependencies import get_db
 from app.core.auth import get_current_user
-from app.shared.enums import VisitStatus, PurposeOfUse, MRNStatus, AdmissionStatus
+from app.shared.enums import (
+    AdmissionStatus,
+    MRNStatus,
+    PurposeOfUse,
+    VisitStatus,
+    VisitTriageState,
+)
 
 from app.models.visit import Visit
 from app.models.patient import Patient
@@ -48,6 +57,7 @@ from app.schemas.visit import VisitCreateRequest, VisitCreateResponse
 
 from datetime import datetime
 from app.core.rbac import require_reception
+from app.core.rbac import require_triage_staff
 from app.core.rbac import require_doctor
 from app.core.rbac import require_clinic_admin
 from app.shared.enums import UserRole
@@ -223,6 +233,100 @@ def transition_visit(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.post(
+    "/{visit_id}/triage/draft",
+    response_model=TriageDraftResponse,
+    status_code=status.HTTP_200_OK,
+)
+def upsert_triage_draft(
+    visit_id: UUID,
+    payload: TriageDraftRequest,
+    dep=Depends(idempotent("VISIT_TRIAGE_DRAFT")),
+    current_user=Depends(require_visit_access),
+):
+    record, key, db = dep
+    if record:
+        return record.response_body
+
+    triage_service = TriageService(db)
+    triage, visit = triage_service.upsert_draft_assessment(
+        visit_id=visit_id,
+        payload=payload,
+        current_user=current_user,
+        idempotency_key=key,
+    )
+
+    response_payload = TriageDraftResponse(
+        triage_assessment=TriageAssessmentResponse.model_validate(
+            triage,
+            from_attributes=True,
+        ),
+        visit_id=visit.id,
+        visit_status=visit.status,
+        visit_version=visit.version,
+    ).model_dump(mode="json")
+
+    db.add(
+        IdempotencyKey(
+            id=uuid.uuid4(),
+            key=key,
+            user_id=current_user.id,
+            endpoint="VISIT_TRIAGE_DRAFT",
+            request_hash=hash_request(payload.model_dump(mode="json")),
+            response_body=response_payload,
+        )
+    )
+    db.commit()
+    return response_payload
+
+
+@router.post(
+    "/{visit_id}/triage/sign",
+    response_model=TriageFinalizeResponse,
+    status_code=status.HTTP_200_OK,
+)
+def sign_triage_assessment(
+    visit_id: UUID,
+    payload: TriageSignRequest,
+    dep=Depends(idempotent("VISIT_TRIAGE_SIGN")),
+    current_user=Depends(require_visit_access),
+):
+    record, key, db = dep
+    if record:
+        return record.response_body
+
+    triage_service = TriageService(db)
+    triage, visit = triage_service.sign_assessment(
+        visit_id=visit_id,
+        payload=payload,
+        current_user=current_user,
+        idempotency_key=key,
+    )
+
+    response_payload = TriageFinalizeResponse(
+        triage_assessment=TriageAssessmentResponse.model_validate(
+            triage,
+            from_attributes=True,
+        ),
+        visit_id=visit.id,
+        visit_status=visit.status,
+        visit_version=visit.version,
+    ).model_dump(mode="json")
+
+    db.add(
+        IdempotencyKey(
+            id=uuid.uuid4(),
+            key=key,
+            user_id=current_user.id,
+            endpoint="VISIT_TRIAGE_SIGN",
+            request_hash=hash_request(payload.model_dump(mode="json")),
+            response_body=response_payload,
+        )
+    )
+    db.commit()
+    return response_payload
 
 
 @router.post(
@@ -462,6 +566,26 @@ def get_queue(
     visits = service.get_queue_for_clinic(
         clinic_id=current_user.clinic_id,
         status=status,
+    )
+    _attach_patient_names(db, visits)
+    return visits
+
+
+@router.get("/triage/queue", response_model=list[VisitResponse])
+def get_triage_queue(
+    triage_state: VisitTriageState | None = Query(default=VisitTriageState.PENDING),
+    limit: int = Query(default=150, ge=1, le=500),
+    db=Depends(get_db),
+    current_user=Depends(require_triage_staff),
+):
+    """
+    Clinical triage queue for triage-capable staff.
+    Default scope is PENDING triage_state (patients awaiting triage assessment).
+    """
+    visits = TriageService(db).list_triage_queue(
+        current_user=current_user,
+        triage_state=triage_state,
+        limit=limit,
     )
     _attach_patient_names(db, visits)
     return visits

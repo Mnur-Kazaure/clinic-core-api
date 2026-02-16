@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/shared/Button';
+import { Input } from '@/shared/Input';
 import {
   maternityService,
   MaternityDeliveryResponse,
@@ -9,6 +10,10 @@ import {
   FamilyPlanningEventResponse,
 } from '@/domains/maternity/services/maternityService';
 import { VisitResponse } from '@/shared/types';
+import {
+  FollowUpListItem,
+  followUpService,
+} from '@/domains/followup/services/followupService';
 import { userService, Doctor } from '@/domains/user/services/userService';
 import { visitService } from '@/domains/visit/services/visitService';
 import { MaternityQueuePanel } from '@/app/maternity/components/MaternityQueuePanel';
@@ -34,6 +39,19 @@ export function MaternityDashboard() {
   const [selectedOwnerId, setSelectedOwnerId] = useState('');
   const [reassignLoading, setReassignLoading] = useState(false);
   const [reassignError, setReassignError] = useState<string | null>(null);
+  const [followUps, setFollowUps] = useState<{
+    overdue: FollowUpListItem[];
+    today: FollowUpListItem[];
+    upcoming: FollowUpListItem[];
+  }>({
+    overdue: [],
+    today: [],
+    upcoming: [],
+  });
+  const [followUpsLoading, setFollowUpsLoading] = useState(false);
+  const [followUpsError, setFollowUpsError] = useState<string | null>(null);
+  const [followUpSearch, setFollowUpSearch] = useState('');
+  const [followUpActionError, setFollowUpActionError] = useState<string | null>(null);
 
   const selectedVisit = useMemo(
     () => queue.find((visit) => visit.id === selectedVisitId) ?? null,
@@ -49,6 +67,25 @@ export function MaternityDashboard() {
       return patientName.includes(term) || patientMrn.includes(term);
     });
   }, [queue, search]);
+
+  const loadMaternityFollowUps = async () => {
+    try {
+      setFollowUpsLoading(true);
+      setFollowUpsError(null);
+      const data = await followUpService.getMyFollowUps();
+      const maternityOnly = (items: FollowUpListItem[]) =>
+        items.filter((item) => item.recommended_service_line === 'MATERNITY');
+      setFollowUps({
+        overdue: maternityOnly(data.overdue || []),
+        today: maternityOnly(data.today || []),
+        upcoming: maternityOnly(data.upcoming || []),
+      });
+    } catch {
+      setFollowUpsError('Unable to load maternity follow-up worklist.');
+    } finally {
+      setFollowUpsLoading(false);
+    }
+  };
 
   const loadQueue = async (preserveVisitId?: string | null) => {
     try {
@@ -74,6 +111,19 @@ export function MaternityDashboard() {
 
   useEffect(() => {
     void loadQueue();
+  }, []);
+
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    void loadMaternityFollowUps();
+    intervalId = setInterval(() => {
+      void loadMaternityFollowUps();
+    }, 60000);
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -167,6 +217,34 @@ export function MaternityDashboard() {
     }
   };
 
+  const filterFollowUps = (items: FollowUpListItem[]) => {
+    const term = followUpSearch.trim().toLowerCase();
+    if (!term) return items;
+    return items.filter((item) => {
+      const patientName = (item.patient_name || '').toLowerCase();
+      const patientMrn = (item.patient_mrn || '').toLowerCase();
+      const patientId = item.patient_id_canonical.toLowerCase();
+      const reason = (item.reason || '').toLowerCase();
+      return (
+        patientName.includes(term) ||
+        patientMrn.includes(term) ||
+        patientId.includes(term) ||
+        reason.includes(term)
+      );
+    });
+  };
+
+  const handleOpenFollowUpItem = (item: FollowUpListItem) => {
+    setFollowUpActionError(null);
+    if (!item.active_visit_id) {
+      setFollowUpActionError(
+        'No active linked visit yet. Ask reception to start a linked follow-up visit.'
+      );
+      return;
+    }
+    setSelectedVisitId(item.active_visit_id);
+  };
+
   return (
     <div className="space-y-4">
       <header className="rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-emerald-50/40 to-blue-50/30 px-4 py-4 shadow-sm">
@@ -231,6 +309,92 @@ export function MaternityDashboard() {
             error={reassignError}
             onReassign={handleReassignOwner}
           />
+
+          <section className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Maternity Follow-Ups</p>
+                <p className="text-xs text-slate-500">
+                  Overdue, today, and upcoming follow-up obligations.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={followUpsLoading}
+                onClick={() => {
+                  void loadMaternityFollowUps();
+                }}
+              >
+                {followUpsLoading ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </div>
+
+            <Input
+              label="Quick Search"
+              placeholder="Name, MRN, patient ID, reason..."
+              value={followUpSearch}
+              onChange={(event) => setFollowUpSearch(event.target.value)}
+            />
+
+            {followUpsError ? (
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {followUpsError}
+              </div>
+            ) : null}
+            {followUpActionError ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                {followUpActionError}
+              </div>
+            ) : null}
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              {[
+                { key: 'overdue', label: 'Overdue', items: filterFollowUps(followUps.overdue) },
+                { key: 'today', label: 'Today', items: filterFollowUps(followUps.today) },
+                {
+                  key: 'upcoming',
+                  label: 'Upcoming',
+                  items: filterFollowUps(followUps.upcoming),
+                },
+              ].map((group) => (
+                <div key={group.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      {group.label}
+                    </p>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-700">
+                      {group.items.length}
+                    </span>
+                  </div>
+                  {group.items.length === 0 ? (
+                    <p className="text-xs text-slate-500">No follow-ups.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {group.items.slice(0, 4).map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleOpenFollowUpItem(item)}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:border-slate-300"
+                        >
+                          <p className="text-xs font-semibold text-slate-900">
+                            {item.patient_name || 'Unknown patient'}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {item.patient_mrn
+                              ? `MRN ${item.patient_mrn}`
+                              : `ID ${item.patient_id_canonical.slice(0, 8)}...`}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600">{item.reason}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
 
           <DeliveryRecordPanel
             selectedVisit={selectedVisit}

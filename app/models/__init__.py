@@ -43,3 +43,8 @@ from .maternity_delivery_record import MaternityDeliveryRecord
 from .maternity_postnatal_note import MaternityPostnatalNote
 from .family_planning_event import FamilyPlanningEvent
 from .triage_assessment import TriageAssessment
+from .condition_profile import ConditionProfile
+from .diagnosis_condition_map import DiagnosisConditionMap
+from .chronic_recall import ChronicRecall
+from .follow_up import FollowUp
+from .follow_up_status_history import FollowUpStatusHistory
