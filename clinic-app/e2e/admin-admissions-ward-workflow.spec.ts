@@ -287,10 +287,13 @@ test.describe('Admin admissions ward workflow', () => {
       (await activeBedRowForPatient.count()) > 0 ? activeBedRowForPatient : activeBedRowFallback;
     await expect(activeBedRow).toBeVisible();
     await activeBedRow.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
-    const releaseModal = page.getByRole('dialog', {
-      name: /Release bed \(keep admission active\)/i,
+    const releaseHeading = page.getByRole('heading', {
+      name: 'Release bed (keep admission active)',
     });
-    await expect(releaseModal).toBeVisible();
+    await expect(releaseHeading).toBeVisible();
+    const releaseModal = releaseHeading.locator(
+      'xpath=ancestor::div[contains(@class,"w-full max-w-lg")][1]'
+    );
     await releaseModal
       .getByPlaceholder('Patient moved, temporary discharge, cleaning...')
       .fill('Temporary bed release');
@@ -324,10 +327,13 @@ test.describe('Admin admissions ward workflow', () => {
         : postReleaseRowFallback;
     await expect(postReleaseRow).toBeVisible();
     await postReleaseRow.getByRole('button', { name: 'Discharge Admission' }).click();
-    const dischargeModal = page.getByRole('dialog', {
-      name: /Discharge active admission/i,
+    const dischargeHeading = page.getByRole('heading', {
+      name: 'Discharge active admission',
     });
-    await expect(dischargeModal).toBeVisible();
+    await expect(dischargeHeading).toBeVisible();
+    const dischargeModal = dischargeHeading.locator(
+      'xpath=ancestor::div[contains(@class,"w-full max-w-lg")][1]'
+    );
     await dischargeModal
       .getByPlaceholder('Clinical/operational discharge reason...')
       .fill('Discharge after workflow completion');
