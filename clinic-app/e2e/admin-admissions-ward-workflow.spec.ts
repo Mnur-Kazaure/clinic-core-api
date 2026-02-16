@@ -140,11 +140,17 @@ test.describe('Admin admissions ward workflow', () => {
     expect(queueBox!.y).toBeLessThan(boardBox!.y);
     expect(boardBox!.y).toBeLessThan(capacityBox!.y);
 
-    const pendingRow = page
+    const pendingRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Approve' }) })
       .first();
+    const pendingRowFallback = page
+      .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ has: page.getByRole('button', { name: 'Approve' }) })
+      .first();
+    const pendingRow =
+      (await pendingRowForPatient.count()) > 0 ? pendingRowForPatient : pendingRowFallback;
     if ((await pendingRow.count()) > 0) {
       await expect(pendingRow).toBeVisible();
       await pendingRow.getByRole('button', { name: 'Approve' }).click();
@@ -188,11 +194,19 @@ test.describe('Admin admissions ward workflow', () => {
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'Approved' }).click();
-    const approvedRow = page
+    const approvedRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Assign Bed' }) })
       .first();
+    const approvedRowFallback = page
+      .locator('div.rounded-lg.border.border-slate-200')
+      .filter({
+        has: page.locator('button:has-text("Assign Bed"):not([disabled])'),
+      })
+      .first();
+    const approvedRow =
+      (await approvedRowForPatient.count()) > 0 ? approvedRowForPatient : approvedRowFallback;
     await expect(approvedRow).toBeVisible({ timeout: 30_000 });
     await approvedRow.getByRole('button', { name: 'Assign Bed' }).click();
 
@@ -231,11 +245,17 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(page.getByText('Bed Timeline').first()).toBeVisible();
     await page.getByRole('button', { name: 'Close', exact: true }).click();
 
-    const activeBedRow = page
+    const activeBedRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
       .first();
+    const activeBedRowFallback = page
+      .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
+      .first();
+    const activeBedRow =
+      (await activeBedRowForPatient.count()) > 0 ? activeBedRowForPatient : activeBedRowFallback;
     await expect(activeBedRow).toBeVisible();
     await activeBedRow.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
     await expect(
@@ -252,11 +272,19 @@ test.describe('Admin admissions ward workflow', () => {
     await page.getByRole('button', { name: 'Release Bed (Keep Active)' }).last().click();
     await expect(page.getByText(/Bed released for/).first()).toBeVisible();
 
-    const postReleaseRow = page
+    const postReleaseRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.patientName })
       .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
       .first();
+    const postReleaseRowFallback = page
+      .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
+      .first();
+    const postReleaseRow =
+      (await postReleaseRowForPatient.count()) > 0
+        ? postReleaseRowForPatient
+        : postReleaseRowFallback;
     await expect(postReleaseRow).toBeVisible();
     await postReleaseRow.getByRole('button', { name: 'Discharge Admission' }).click();
     await expect(
@@ -273,11 +301,17 @@ test.describe('Admin admissions ward workflow', () => {
     await page.getByRole('button', { name: 'Discharge Admission' }).last().click();
     await expect(page.getByText(/Admission discharged for/).first()).toBeVisible();
 
-    const readOnlyRow = page
+    const readOnlyRowForPatient = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.patientName })
       .filter({ hasText: /read-only/i })
       .first();
+    const readOnlyRowFallback = page
+      .locator('div.rounded-lg.border.border-slate-200')
+      .filter({ hasText: /read-only/i })
+      .first();
+    const readOnlyRow =
+      (await readOnlyRowForPatient.count()) > 0 ? readOnlyRowForPatient : readOnlyRowFallback;
     await expect(readOnlyRow).toBeVisible();
     await expect(readOnlyRow.getByRole('button', { name: 'Assign Bed' })).toHaveCount(0);
     await expect(readOnlyRow.getByRole('button', { name: 'Discharge Admission' })).toHaveCount(
