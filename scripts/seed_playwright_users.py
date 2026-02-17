@@ -14,16 +14,25 @@ import bcrypt
 
 from app.core.database import SessionLocal
 from app.models.clinic import Clinic
+from app.models.consultation import Consultation
 from app.models.follow_up import FollowUp
+from app.models.lab_request import LabRequest
 from app.models.patient import Patient
+from app.models.prescription import Prescription
 from app.models.user import User
+from app.models.visit import Visit
 from app.shared.enums import (
     FollowUpGeneratedBy,
+    LabRequestStatus,
     FollowUpPriority,
     FollowUpStatus,
     FollowUpType,
     Gender,
+    PrescriptionStatus,
+    RecordStatus,
     UserRole,
+    VisitServiceLine,
+    VisitStatus,
 )
 
 
@@ -177,6 +186,218 @@ def _upsert_reception_follow_up_fixture(
     )
 
 
+def _upsert_patient_fixture(
+    db,
+    *,
+    clinic_id,
+    full_name: str,
+    phone_number: str,
+) -> Patient:
+    patient = (
+        db.query(Patient)
+        .filter(
+            Patient.clinic_id == clinic_id,
+            Patient.full_name == full_name,
+        )
+        .first()
+    )
+    if patient:
+        patient.phone_number = phone_number
+        return patient
+
+    patient = Patient(
+        clinic_id=clinic_id,
+        full_name=full_name,
+        date_of_birth=date(1990, 1, 1),
+        gender=Gender.FEMALE,
+        phone_number=phone_number,
+        address="E2E Role Action Fixture",
+        occupation="E2E Fixture",
+    )
+    db.add(patient)
+    db.flush()
+    return patient
+
+
+def _upsert_visit_fixture(
+    db,
+    *,
+    clinic_id,
+    patient_id,
+    owner_user_id,
+    target_status: VisitStatus,
+) -> Visit:
+    visit = (
+        db.query(Visit)
+        .filter(
+            Visit.clinic_id == clinic_id,
+            Visit.patient_id == patient_id,
+            Visit.service_line == VisitServiceLine.OPD,
+            Visit.status.notin_([VisitStatus.COMPLETED, VisitStatus.CANCELLED]),
+        )
+        .order_by(Visit.created_at.desc())
+        .first()
+    )
+    if visit is None:
+        visit = Visit(
+            clinic_id=clinic_id,
+            patient_id=patient_id,
+            assigned_doctor_id=owner_user_id,
+            service_line=VisitServiceLine.OPD,
+            status=target_status,
+        )
+        db.add(visit)
+        db.flush()
+        return visit
+
+    visit.assigned_doctor_id = owner_user_id
+    visit.status = target_status
+    visit.service_line = VisitServiceLine.OPD
+    visit.completed_at = None
+    return visit
+
+
+def _upsert_role_dashboard_action_fixtures(
+    db,
+    *,
+    clinic_id,
+    doctor_user_id,
+) -> None:
+    now = datetime.now(timezone.utc)
+
+    doctor_patient = _upsert_patient_fixture(
+        db,
+        clinic_id=clinic_id,
+        full_name="E2E Doctor Queue Action",
+        phone_number="08000000002",
+    )
+    _upsert_visit_fixture(
+        db,
+        clinic_id=clinic_id,
+        patient_id=doctor_patient.id,
+        owner_user_id=doctor_user_id,
+        target_status=VisitStatus.IN_CONSULTATION,
+    )
+
+    lab_patient = _upsert_patient_fixture(
+        db,
+        clinic_id=clinic_id,
+        full_name="E2E Lab Queue Action",
+        phone_number="08000000003",
+    )
+    lab_visit = _upsert_visit_fixture(
+        db,
+        clinic_id=clinic_id,
+        patient_id=lab_patient.id,
+        owner_user_id=doctor_user_id,
+        target_status=VisitStatus.LAB_REQUESTED,
+    )
+    lab_request = (
+        db.query(LabRequest)
+        .filter(
+            LabRequest.clinic_id == clinic_id,
+            LabRequest.visit_id == lab_visit.id,
+            LabRequest.test_name == "E2E Full Blood Count",
+        )
+        .order_by(LabRequest.created_at.desc())
+        .first()
+    )
+    if lab_request is None:
+        lab_request = LabRequest(
+            clinic_id=clinic_id,
+            visit_id=lab_visit.id,
+            requested_by=doctor_user_id,
+            test_name="E2E Full Blood Count",
+            special_instructions="Role action smoke fixture",
+            status=LabRequestStatus.PENDING,
+            created_at=now,
+        )
+        db.add(lab_request)
+    else:
+        lab_request.requested_by = doctor_user_id
+        lab_request.status = LabRequestStatus.PENDING
+        lab_request.completed_at = None
+        lab_request.special_instructions = "Role action smoke fixture"
+
+    pharmacy_patient = _upsert_patient_fixture(
+        db,
+        clinic_id=clinic_id,
+        full_name="E2E Pharmacy Queue Action",
+        phone_number="08000000004",
+    )
+    pharmacy_visit = _upsert_visit_fixture(
+        db,
+        clinic_id=clinic_id,
+        patient_id=pharmacy_patient.id,
+        owner_user_id=doctor_user_id,
+        target_status=VisitStatus.PHARMACY_PENDING,
+    )
+    consultation = (
+        db.query(Consultation)
+        .filter(Consultation.visit_id == pharmacy_visit.id)
+        .first()
+    )
+    if consultation is None:
+        consultation = Consultation(
+            visit_id=pharmacy_visit.id,
+            clinic_id=clinic_id,
+            doctor_id=doctor_user_id,
+            started_at=now,
+            completed_at=now,
+            record_status=RecordStatus.SIGNED,
+            signed_at=now,
+            diagnosis="E2E diagnosis for pharmacy queue",
+            notes="E2E consultation fixture",
+        )
+        db.add(consultation)
+        db.flush()
+    else:
+        consultation.clinic_id = clinic_id
+        consultation.doctor_id = doctor_user_id
+        consultation.record_status = RecordStatus.SIGNED
+        consultation.started_at = consultation.started_at or now
+        consultation.completed_at = now
+        consultation.signed_at = now
+
+    prescription = (
+        db.query(Prescription)
+        .filter(
+            Prescription.clinic_id == clinic_id,
+            Prescription.visit_id == pharmacy_visit.id,
+            Prescription.drug_name == "Paracetamol 500mg (E2E)",
+        )
+        .order_by(Prescription.issued_at.desc())
+        .first()
+    )
+    if prescription is None:
+        prescription = Prescription(
+            consultation_id=consultation.id,
+            visit_id=pharmacy_visit.id,
+            clinic_id=clinic_id,
+            prescribed_by=doctor_user_id,
+            drug_name="Paracetamol 500mg (E2E)",
+            dosage="1 tablet",
+            frequency="TDS",
+            duration="3 days",
+            instructions="After meals",
+            status=PrescriptionStatus.ISSUED,
+            record_status=RecordStatus.SIGNED,
+            issued_at=now,
+            signed_at=now,
+        )
+        db.add(prescription)
+    else:
+        prescription.consultation_id = consultation.id
+        prescription.prescribed_by = doctor_user_id
+        prescription.status = PrescriptionStatus.ISSUED
+        prescription.record_status = RecordStatus.SIGNED
+        prescription.signed_at = now
+        prescription.issued_at = now
+        prescription.dispensed_by = None
+        prescription.dispensed_at = None
+        prescription.cancelled_at = None
+
+
 def main() -> None:
     args = _parse_args()
     doctor_email = args.doctor_email or _derive_role_email(args.reception_email, "doctor")
@@ -281,12 +502,19 @@ def main() -> None:
         # Keep one deterministic follow-up item visible for reception action smoke.
         chew_user = db.query(User).filter(User.email == args.chew_email).first()
         reception_user = db.query(User).filter(User.email == args.reception_email).first()
+        doctor_user = db.query(User).filter(User.email == doctor_email).first()
         if chew_user and reception_user:
             _upsert_reception_follow_up_fixture(
                 db,
                 clinic_id=clinic.id,
                 created_by=reception_user.id,
                 owner_user_id=chew_user.id,
+            )
+        if doctor_user:
+            _upsert_role_dashboard_action_fixtures(
+                db,
+                clinic_id=clinic.id,
+                doctor_user_id=doctor_user.id,
             )
 
         db.commit()

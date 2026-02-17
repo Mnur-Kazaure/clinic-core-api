@@ -2,6 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 
 const apiBase = process.env.E2E_API_BASE_URL || 'http://localhost:8000/api';
 const followUpFixturePatientName = 'E2E Follow-Up Linked Visit';
+const doctorFixturePatientName = 'E2E Doctor Queue Action';
+const labFixturePatientName = 'E2E Lab Queue Action';
+const pharmacyFixturePatientName = 'E2E Pharmacy Queue Action';
 
 type Credentials = { email: string; password: string };
 
@@ -110,156 +113,6 @@ async function loginApi(
   expect(response.ok()).toBeTruthy();
 }
 
-async function getCurrentUser(
-  request: import('@playwright/test').APIRequestContext
-): Promise<{ id: string; clinic_id: string; role: string }> {
-  const response = await request.get(`${apiBase}/v1/auth/me`);
-  expect(response.ok()).toBeTruthy();
-  return response.json();
-}
-
-function uniqueSuffix(): string {
-  return `${Date.now()}${Math.floor(Math.random() * 1000)}`;
-}
-
-function idempotencyKey(prefix: string): string {
-  return `${prefix}-${uniqueSuffix()}`;
-}
-
-async function seedInConsultationVisitForDoctor(
-  request: import('@playwright/test').APIRequestContext,
-  creds: {
-    reception: Credentials;
-    chew: Credentials;
-    doctor: Credentials;
-  },
-  label: string
-): Promise<{ patientName: string; visitId: string }> {
-  await loginApi(request, creds.doctor);
-  const doctorUser = await getCurrentUser(request);
-
-  await loginApi(request, creds.reception);
-  const unique = uniqueSuffix();
-  const patientName = `E2E ${label} ${unique}`;
-  const createPatientResponse = await request.post(`${apiBase}/v1/patient`, {
-    data: {
-      full_name: patientName,
-      date_of_birth: '2000-01-01',
-      gender: 'FEMALE',
-      phone_number: `082${unique.slice(-8)}`,
-      address: 'E2E Role Action Fixture',
-      occupation: 'E2E',
-      registration_payment_method: 'CASH',
-      registration_payment_reference: `E2E-ROLE-${unique}`,
-    },
-  });
-  expect(createPatientResponse.ok()).toBeTruthy();
-  const patient = (await createPatientResponse.json()) as { id: string };
-
-  const startVisitResponse = await request.post(`${apiBase}/v1/visits/start`, {
-    data: {
-      patient_id: patient.id,
-      assigned_doctor_id: doctorUser.id,
-      service_line: 'OPD',
-    },
-  });
-  expect(startVisitResponse.ok()).toBeTruthy();
-  const visit = (await startVisitResponse.json()) as { id: string; version: number };
-
-  await loginApi(request, creds.chew);
-  const finalizeTriageResponse = await request.post(
-    `${apiBase}/v1/visits/${visit.id}/triage/finalize`,
-    {
-      headers: {
-        'Idempotency-Key': idempotencyKey('e2e-triage-finalize'),
-      },
-      data: {
-        expected_version: visit.version,
-        action: 'QUEUE_FOR_CONSULTATION',
-        acuity_level: 'ROUTINE',
-        chief_complaint: 'E2E triage complaint',
-        complaint_severity: 'MILD',
-        triage_note: 'E2E triage finalize',
-        danger_sign_codes: [],
-        temp_c: 36.7,
-        pulse_bpm: 80,
-        rr_bpm: 16,
-        sbp_mmhg: 112,
-        dbp_mmhg: 72,
-        spo2_pct: 98,
-        is_doctor_fallback: false,
-      },
-    }
-  );
-  expect(finalizeTriageResponse.ok()).toBeTruthy();
-  const triagePayload = (await finalizeTriageResponse.json()) as { visit_version: number };
-
-  await loginApi(request, creds.doctor);
-  const transitionResponse = await request.post(
-    `${apiBase}/v1/visits/${visit.id}/transition`,
-    {
-      headers: {
-        'Idempotency-Key': idempotencyKey('e2e-visit-transition'),
-      },
-      data: {
-        to_status: 'IN_CONSULTATION',
-        expected_version: triagePayload.visit_version,
-      },
-    }
-  );
-  expect(transitionResponse.ok()).toBeTruthy();
-
-  return { patientName, visitId: visit.id };
-}
-
-async function seedLabAndPharmacyWorkItem(
-  request: import('@playwright/test').APIRequestContext,
-  creds: {
-    reception: Credentials;
-    chew: Credentials;
-    doctor: Credentials;
-  }
-): Promise<{ patientName: string }> {
-  const visitFixture = await seedInConsultationVisitForDoctor(
-    request,
-    creds,
-    'LabPharmacy'
-  );
-
-  await loginApi(request, creds.doctor);
-  const startConsultationResponse = await request.post(
-    `${apiBase}/v1/consultations/start`,
-    {
-      data: { visit_id: visitFixture.visitId },
-    }
-  );
-  expect(startConsultationResponse.ok()).toBeTruthy();
-  const consultation = (await startConsultationResponse.json()) as { id: string };
-
-  const createLabRequestResponse = await request.post(`${apiBase}/v1/lab/requests`, {
-    data: {
-      visit_id: visitFixture.visitId,
-      test_name: 'Full Blood Count (E2E)',
-      special_instructions: 'Role action smoke fixture',
-    },
-  });
-  expect(createLabRequestResponse.ok()).toBeTruthy();
-
-  const createPrescriptionResponse = await request.post(`${apiBase}/v1/prescriptions`, {
-    data: {
-      consultation_id: consultation.id,
-      drug_name: 'Paracetamol 500mg',
-      dosage: '1 tablet',
-      frequency: 'TDS',
-      duration: '3 days',
-      instructions: 'After meals',
-    },
-  });
-  expect(createPrescriptionResponse.ok()).toBeTruthy();
-
-  return { patientName: visitFixture.patientName };
-}
-
 test.describe('Role dashboard action smoke', () => {
   test('Reception starts linked follow-up visit from dashboard', async ({ page }) => {
     const creds = requireCredentials();
@@ -286,18 +139,8 @@ test.describe('Role dashboard action smoke', () => {
     assertNoFailures('RECEPTION action smoke', failures);
   });
 
-  test('Doctor opens queue item details', async ({ page, request }) => {
-    test.setTimeout(120_000);
+  test('Doctor opens queue item details', async ({ page }) => {
     const creds = requireCredentials();
-    const seeded = await seedInConsultationVisitForDoctor(
-      request,
-      {
-        reception: creds.reception,
-        chew: creds.chew,
-        doctor: creds.doctor,
-      },
-      'DoctorAction'
-    );
     const failures = startFailureTracking(page);
 
     await loginApi(page.request, creds.doctor);
@@ -306,7 +149,7 @@ test.describe('Role dashboard action smoke', () => {
 
     const row = page
       .locator('div')
-      .filter({ hasText: seeded.patientName })
+      .filter({ hasText: doctorFixturePatientName })
       .filter({ has: page.getByRole('button', { name: 'View Details' }) })
       .first();
     await expect(row).toBeVisible({ timeout: 30_000 });
@@ -317,14 +160,8 @@ test.describe('Role dashboard action smoke', () => {
     assertNoFailures('DOCTOR action smoke', failures);
   });
 
-  test('Lab opens pending request modal', async ({ page, request }) => {
-    test.setTimeout(120_000);
+  test('Lab opens pending request modal', async ({ page }) => {
     const creds = requireCredentials();
-    const seeded = await seedLabAndPharmacyWorkItem(request, {
-      reception: creds.reception,
-      chew: creds.chew,
-      doctor: creds.doctor,
-    });
     const failures = startFailureTracking(page);
 
     await loginApi(page.request, creds.lab);
@@ -333,7 +170,7 @@ test.describe('Role dashboard action smoke', () => {
 
     const row = page
       .locator('div')
-      .filter({ hasText: seeded.patientName })
+      .filter({ hasText: labFixturePatientName })
       .filter({ has: page.getByRole('button', { name: 'Process' }) })
       .first();
     await expect(row).toBeVisible({ timeout: 30_000 });
@@ -344,14 +181,8 @@ test.describe('Role dashboard action smoke', () => {
     assertNoFailures('LAB action smoke', failures);
   });
 
-  test('Pharmacy opens dispense modal from queue item', async ({ page, request }) => {
-    test.setTimeout(120_000);
+  test('Pharmacy opens dispense modal from queue item', async ({ page }) => {
     const creds = requireCredentials();
-    const seeded = await seedLabAndPharmacyWorkItem(request, {
-      reception: creds.reception,
-      chew: creds.chew,
-      doctor: creds.doctor,
-    });
     const failures = startFailureTracking(page);
 
     await loginApi(page.request, creds.pharmacy);
@@ -362,7 +193,7 @@ test.describe('Role dashboard action smoke', () => {
 
     const row = page
       .locator('div')
-      .filter({ hasText: seeded.patientName })
+      .filter({ hasText: pharmacyFixturePatientName })
       .filter({ has: page.getByRole('button', { name: 'Dispense' }) })
       .first();
     await expect(row).toBeVisible({ timeout: 30_000 });
