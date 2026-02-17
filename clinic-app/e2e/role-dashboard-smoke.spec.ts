@@ -8,7 +8,10 @@ type RoleDashboardCase = {
   label: string;
   path: string;
   heading: RegExp;
-  supportText?: RegExp;
+  supportHeading?: {
+    name: string | RegExp;
+    exact?: boolean;
+  };
   creds: Credentials;
 };
 
@@ -81,42 +84,42 @@ test.describe('Role dashboard smoke', () => {
       label: 'RECEPTION',
       path: '/reception',
       heading: /Reception Dashboard/i,
-      supportText: /Follow-Ups/i,
+      supportHeading: { name: 'Follow-Ups', exact: true },
       creds: creds.reception,
     },
     {
       label: 'CHEW',
       path: '/anc',
       heading: /ANC (Dashboard|Care Workspace)/i,
-      supportText: /ANC Queue/i,
+      supportHeading: { name: /ANC Queue/i },
       creds: creds.chew,
     },
     {
       label: 'MIDWIFE',
       path: '/maternity',
       heading: /Maternity (Dashboard|Care Workspace)/i,
-      supportText: /Maternity Queue/i,
+      supportHeading: { name: /Maternity Queue/i },
       creds: creds.midwife,
     },
     {
       label: 'DOCTOR',
       path: '/doctor',
       heading: /Doctor Dashboard/i,
-      supportText: /Patient Queue/i,
+      supportHeading: { name: 'Patient Queue', exact: true },
       creds: creds.doctor,
     },
     {
       label: 'LAB',
       path: '/lab',
       heading: /Lab Dashboard/i,
-      supportText: /Lab Requests/i,
+      supportHeading: { name: 'Lab Requests', exact: true },
       creds: creds.lab,
     },
     {
       label: 'PHARMACY',
       path: '/pharmacy',
       heading: /Pharmacy Dashboard/i,
-      supportText: /Prescription Queue/i,
+      supportHeading: { name: 'Prescription Queue', exact: true },
       creds: creds.pharmacy,
     },
   ];
@@ -146,8 +149,13 @@ test.describe('Role dashboard smoke', () => {
       await expect(page.getByRole('heading', { name: roleCase.heading })).toBeVisible({
         timeout: 30_000,
       });
-      if (roleCase.supportText) {
-        await expect(page.getByText(roleCase.supportText)).toBeVisible();
+      if (roleCase.supportHeading) {
+        await expect(
+          page.getByRole('heading', {
+            name: roleCase.supportHeading.name,
+            exact: roleCase.supportHeading.exact,
+          })
+        ).toBeVisible();
       }
 
       expect(serverFailures, `Server failures seen for ${roleCase.label}`).toEqual([]);
