@@ -21,6 +21,7 @@ ALLOWED_EVENT_TYPES = {
     "LAB_RESULT_POSTED",
     "PATIENT_ADMITTED",
     "BED_ASSIGNED",
+    "BED_RELEASED",
     "BED_TRANSFERRED",
     "PATIENT_DISCHARGED",
     "PRIORITY_ESCALATED",
@@ -62,6 +63,7 @@ EMITTER_EVENT_MAP = {
     },
     "bed": {
         "BED_ASSIGNED",
+        "BED_RELEASED",
         "BED_TRANSFERRED",
     },
     "access": {
