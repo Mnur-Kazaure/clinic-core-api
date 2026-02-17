@@ -2,7 +2,7 @@
 
 This script is idempotent:
 - creates/updates one clinic
-- creates/updates RECEPTION, CHEW, MIDWIFE, ADMIN users by email
+- creates/updates RECEPTION, CHEW, MIDWIFE, DOCTOR, LAB, PHARMACY, ADMIN users by email
 """
 
 from __future__ import annotations
@@ -26,6 +26,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--chew-password", required=True)
     parser.add_argument("--midwife-email", required=True)
     parser.add_argument("--midwife-password", required=True)
+    parser.add_argument("--doctor-email", default=None)
+    parser.add_argument("--doctor-password", default=None)
+    parser.add_argument("--lab-email", default=None)
+    parser.add_argument("--lab-password", default=None)
+    parser.add_argument("--pharmacy-email", default=None)
+    parser.add_argument("--pharmacy-password", default=None)
     parser.add_argument("--admin-email", default=None)
     parser.add_argument("--admin-password", default=None)
     return parser.parse_args()
@@ -78,6 +84,11 @@ def _derive_admin_email(email: str) -> str:
     return f"{local}+admin@{domain}"
 
 
+def _derive_role_email(email: str, suffix: str) -> str:
+    local, domain = email.split("@", 1)
+    return f"{local}+{suffix}@{domain}"
+
+
 def _resolve_role_value(primary: str, fallback: str) -> str:
     """Use newer role when available, otherwise fall back for older branches."""
     role = getattr(UserRole, primary, None)
@@ -88,6 +99,14 @@ def _resolve_role_value(primary: str, fallback: str) -> str:
 
 def main() -> None:
     args = _parse_args()
+    doctor_email = args.doctor_email or _derive_role_email(args.reception_email, "doctor")
+    doctor_password = args.doctor_password or args.reception_password
+    lab_email = args.lab_email or _derive_role_email(args.reception_email, "lab")
+    lab_password = args.lab_password or args.reception_password
+    pharmacy_email = args.pharmacy_email or _derive_role_email(
+        args.reception_email, "pharmacy"
+    )
+    pharmacy_password = args.pharmacy_password or args.reception_password
     admin_email = args.admin_email or _derive_admin_email(args.reception_email)
     admin_password = args.admin_password or args.reception_password
     db = SessionLocal()
@@ -139,6 +158,33 @@ def main() -> None:
             password=args.midwife_password,
             full_name="E2E Midwife Colleague",
             role_value=midwife_role_value,
+        )
+        doctor_role_value = _resolve_role_value("DOCTOR", "CHEW")
+        _upsert_user(
+            db,
+            clinic_id=clinic.id,
+            email=doctor_email,
+            password=doctor_password,
+            full_name="E2E Doctor",
+            role_value=doctor_role_value,
+        )
+        lab_role_value = _resolve_role_value("LAB", "MIDWIFE")
+        _upsert_user(
+            db,
+            clinic_id=clinic.id,
+            email=lab_email,
+            password=lab_password,
+            full_name="E2E Lab Technician",
+            role_value=lab_role_value,
+        )
+        pharmacy_role_value = _resolve_role_value("PHARMACY", "RECEPTION")
+        _upsert_user(
+            db,
+            clinic_id=clinic.id,
+            email=pharmacy_email,
+            password=pharmacy_password,
+            full_name="E2E Pharmacy",
+            role_value=pharmacy_role_value,
         )
         clinic_admin_role_value = _resolve_role_value("CLINIC_ADMIN", "ADMIN")
         _upsert_user(

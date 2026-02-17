@@ -71,6 +71,12 @@ jobs:
       E2E_CHEW_PASSWORD: ${{ secrets.E2E_CHEW_PASSWORD }}
       E2E_MIDWIFE_EMAIL: ${{ secrets.E2E_MIDWIFE_EMAIL }}
       E2E_MIDWIFE_PASSWORD: ${{ secrets.E2E_MIDWIFE_PASSWORD }}
+      E2E_DOCTOR_EMAIL: ${{ secrets.E2E_DOCTOR_EMAIL }}
+      E2E_DOCTOR_PASSWORD: ${{ secrets.E2E_DOCTOR_PASSWORD }}
+      E2E_LAB_EMAIL: ${{ secrets.E2E_LAB_EMAIL }}
+      E2E_LAB_PASSWORD: ${{ secrets.E2E_LAB_PASSWORD }}
+      E2E_PHARMACY_EMAIL: ${{ secrets.E2E_PHARMACY_EMAIL }}
+      E2E_PHARMACY_PASSWORD: ${{ secrets.E2E_PHARMACY_PASSWORD }}
       E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
       E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 
@@ -105,6 +111,12 @@ jobs:
 
       - name: Seed Playwright users
         run: |
+          DOCTOR_EMAIL="${E2E_DOCTOR_EMAIL:-${E2E_RECEPTION_EMAIL%%@*}+doctor@${E2E_RECEPTION_EMAIL#*@}}"
+          DOCTOR_PASSWORD="${E2E_DOCTOR_PASSWORD:-$E2E_RECEPTION_PASSWORD}"
+          LAB_EMAIL="${E2E_LAB_EMAIL:-${E2E_RECEPTION_EMAIL%%@*}+lab@${E2E_RECEPTION_EMAIL#*@}}"
+          LAB_PASSWORD="${E2E_LAB_PASSWORD:-$E2E_RECEPTION_PASSWORD}"
+          PHARMACY_EMAIL="${E2E_PHARMACY_EMAIL:-${E2E_RECEPTION_EMAIL%%@*}+pharmacy@${E2E_RECEPTION_EMAIL#*@}}"
+          PHARMACY_PASSWORD="${E2E_PHARMACY_PASSWORD:-$E2E_RECEPTION_PASSWORD}"
           PYTHONPATH=. python scripts/seed_playwright_users.py \
             --reception-email "$E2E_RECEPTION_EMAIL" \
             --reception-password "$E2E_RECEPTION_PASSWORD" \
@@ -112,6 +124,12 @@ jobs:
             --chew-password "$E2E_CHEW_PASSWORD" \
             --midwife-email "$E2E_MIDWIFE_EMAIL" \
             --midwife-password "$E2E_MIDWIFE_PASSWORD" \
+            --doctor-email "$DOCTOR_EMAIL" \
+            --doctor-password "$DOCTOR_PASSWORD" \
+            --lab-email "$LAB_EMAIL" \
+            --lab-password "$LAB_PASSWORD" \
+            --pharmacy-email "$PHARMACY_EMAIL" \
+            --pharmacy-password "$PHARMACY_PASSWORD" \
             --admin-email "$E2E_ADMIN_EMAIL" \
             --admin-password "$E2E_ADMIN_PASSWORD"
 
