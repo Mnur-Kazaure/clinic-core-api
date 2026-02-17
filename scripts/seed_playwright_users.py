@@ -8,13 +8,23 @@ This script is idempotent:
 from __future__ import annotations
 
 import argparse
+from datetime import date, datetime, timedelta, timezone
 
 import bcrypt
 
 from app.core.database import SessionLocal
 from app.models.clinic import Clinic
+from app.models.follow_up import FollowUp
+from app.models.patient import Patient
 from app.models.user import User
-from app.shared.enums import UserRole
+from app.shared.enums import (
+    FollowUpGeneratedBy,
+    FollowUpPriority,
+    FollowUpStatus,
+    FollowUpType,
+    Gender,
+    UserRole,
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -95,6 +105,76 @@ def _resolve_role_value(primary: str, fallback: str) -> str:
     if role is not None:
         return role.value
     return getattr(UserRole, fallback).value
+
+
+def _upsert_reception_follow_up_fixture(
+    db,
+    *,
+    clinic_id,
+    created_by,
+    owner_user_id,
+) -> None:
+    fixture_patient_name = "E2E Follow-Up Linked Visit"
+    fixture_reason = "E2E linked follow-up visit"
+    patient = (
+        db.query(Patient)
+        .filter(
+            Patient.clinic_id == clinic_id,
+            Patient.full_name == fixture_patient_name,
+        )
+        .first()
+    )
+    if not patient:
+        patient = Patient(
+            clinic_id=clinic_id,
+            full_name=fixture_patient_name,
+            date_of_birth=date(1995, 1, 1),
+            gender=Gender.FEMALE,
+            phone_number="08000000001",
+            address="E2E Follow-Up Fixture",
+            occupation="E2E Fixture",
+        )
+        db.add(patient)
+        db.flush()
+
+    due_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+    existing = (
+        db.query(FollowUp)
+        .filter(
+            FollowUp.clinic_id == clinic_id,
+            FollowUp.patient_id_canonical == patient.id,
+            FollowUp.reason == fixture_reason,
+            FollowUp.status.in_([FollowUpStatus.SCHEDULED, FollowUpStatus.MISSED]),
+        )
+        .order_by(FollowUp.created_at.desc())
+        .first()
+    )
+    if existing:
+        existing.status = FollowUpStatus.SCHEDULED
+        existing.owner_user_id = owner_user_id
+        existing.priority = FollowUpPriority.IMPORTANT
+        existing.type = FollowUpType.MANUAL
+        existing.due_at = due_at
+        existing.generated_by = FollowUpGeneratedBy.USER
+        existing.created_by = created_by
+        existing.cancel_reason_code = None
+        existing.cancel_reason_text = None
+        return
+
+    db.add(
+        FollowUp(
+            clinic_id=clinic_id,
+            patient_id_canonical=patient.id,
+            type=FollowUpType.MANUAL,
+            priority=FollowUpPriority.IMPORTANT,
+            status=FollowUpStatus.SCHEDULED,
+            due_at=due_at,
+            owner_user_id=owner_user_id,
+            reason=fixture_reason,
+            generated_by=FollowUpGeneratedBy.USER,
+            created_by=created_by,
+        )
+    )
 
 
 def main() -> None:
@@ -195,6 +275,16 @@ def main() -> None:
             full_name="E2E Clinic Admin",
             role_value=clinic_admin_role_value,
         )
+        # Keep one deterministic follow-up item visible for reception action smoke.
+        chew_user = db.query(User).filter(User.email == args.chew_email).first()
+        reception_user = db.query(User).filter(User.email == args.reception_email).first()
+        if chew_user and reception_user:
+            _upsert_reception_follow_up_fixture(
+                db,
+                clinic_id=clinic.id,
+                created_by=reception_user.id,
+                owner_user_id=chew_user.id,
+            )
 
         db.commit()
         print("Seeded Playwright users successfully.")
