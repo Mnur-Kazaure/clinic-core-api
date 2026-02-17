@@ -275,6 +275,9 @@ def main() -> None:
             full_name="E2E Clinic Admin",
             role_value=clinic_admin_role_value,
         )
+        # Session autoflush is disabled; flush before fixture lookups so brand-new
+        # users are visible to the follow-up fixture query on fresh databases.
+        db.flush()
         # Keep one deterministic follow-up item visible for reception action smoke.
         chew_user = db.query(User).filter(User.email == args.chew_email).first()
         reception_user = db.query(User).filter(User.email == args.reception_email).first()

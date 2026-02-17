@@ -122,6 +122,10 @@ function uniqueSuffix(): string {
   return `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 }
 
+function idempotencyKey(prefix: string): string {
+  return `${prefix}-${uniqueSuffix()}`;
+}
+
 async function seedInConsultationVisitForDoctor(
   request: import('@playwright/test').APIRequestContext,
   creds: {
@@ -166,6 +170,9 @@ async function seedInConsultationVisitForDoctor(
   const finalizeTriageResponse = await request.post(
     `${apiBase}/v1/visits/${visit.id}/triage/finalize`,
     {
+      headers: {
+        'Idempotency-Key': idempotencyKey('e2e-triage-finalize'),
+      },
       data: {
         expected_version: visit.version,
         action: 'QUEUE_FOR_CONSULTATION',
@@ -191,6 +198,9 @@ async function seedInConsultationVisitForDoctor(
   const transitionResponse = await request.post(
     `${apiBase}/v1/visits/${visit.id}/transition`,
     {
+      headers: {
+        'Idempotency-Key': idempotencyKey('e2e-visit-transition'),
+      },
       data: {
         to_status: 'IN_CONSULTATION',
         expected_version: triagePayload.visit_version,

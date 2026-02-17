@@ -48,50 +48,51 @@ class MRNService:
         while attempts < 3:
             attempts += 1
             try:
-                sequence = (
-                    self.db.query(ClinicMrnSequence)
-                    .filter(ClinicMrnSequence.clinic_id == clinic_id)
-                    .with_for_update()
-                    .first()
-                )
-                if not sequence:
-                    sequence = ClinicMrnSequence(
-                        clinic_id=clinic_id,
-                        prefix=None,
-                        next_value=1,
+                with self.db.begin_nested():
+                    sequence = (
+                        self.db.query(ClinicMrnSequence)
+                        .filter(ClinicMrnSequence.clinic_id == clinic_id)
+                        .with_for_update()
+                        .first()
                     )
-                    self.db.add(sequence)
+                    if not sequence:
+                        sequence = ClinicMrnSequence(
+                            clinic_id=clinic_id,
+                            prefix=None,
+                            next_value=1,
+                        )
+                        self.db.add(sequence)
+                        self.db.flush()
+
+                    seq_value = sequence.next_value
+                    sequence.next_value = seq_value + 1
+
+                    mrn_body = f"{seq_value:07d}"
+                    check_digit = self._luhn_check_digit(mrn_body)
+                    if sequence.prefix:
+                        mrn_value = f"{sequence.prefix}-{mrn_body}-{check_digit}"
+                    else:
+                        mrn_value = f"{mrn_body}-{check_digit}"
+
+                    now = datetime.now(timezone.utc)
+                    mrn = PatientMRN(
+                        clinic_id=clinic_id,
+                        patient_id=canonical_id,
+                        mrn=mrn_value.upper(),
+                        status=MRNStatus.ACTIVE,
+                        issued_at=now,
+                        issued_by=actor.id,
+                        check_digit=check_digit,
+                    )
+                    self.db.add(mrn)
                     self.db.flush()
-
-                seq_value = sequence.next_value
-                sequence.next_value = seq_value + 1
-
-                mrn_body = f"{seq_value:07d}"
-                check_digit = self._luhn_check_digit(mrn_body)
-                if sequence.prefix:
-                    mrn_value = f"{sequence.prefix}-{mrn_body}-{check_digit}"
-                else:
-                    mrn_value = f"{mrn_body}-{check_digit}"
-
-                now = datetime.now(timezone.utc)
-                mrn = PatientMRN(
-                    clinic_id=clinic_id,
-                    patient_id=canonical_id,
-                    mrn=mrn_value.upper(),
-                    status=MRNStatus.ACTIVE,
-                    issued_at=now,
-                    issued_by=actor.id,
-                    check_digit=check_digit,
-                )
-                self.db.add(mrn)
                 if commit:
                     self.db.commit()
                     self.db.refresh(mrn)
-                else:
-                    self.db.flush()
                 return mrn
             except IntegrityError:
-                self.db.rollback()
+                if commit:
+                    self.db.rollback()
                 if attempts >= 3:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
