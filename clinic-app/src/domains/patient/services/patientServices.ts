@@ -25,6 +25,21 @@ export interface PatientSearchParams {
   justification?: string;
 }
 
+export interface PatientListParams {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  purpose_of_use?: PurposeOfUse;
+  justification?: string;
+}
+
+export interface PatientListResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: PatientResponse[];
+}
+
 export const patientService = {
   // Create new patient
   async createPatient(payload: PatientCreateRequest): Promise<PatientResponse> {
@@ -44,6 +59,49 @@ export const patientService = {
           trimmedJustification && trimmedJustification.length >= 2
             ? trimmedJustification
             : 'Reception patient search',
+      },
+    });
+    return response.data;
+  },
+
+  async listPatients(
+    params: PatientListParams = {}
+  ): Promise<PatientListResponse> {
+    const {
+      purpose_of_use,
+      justification,
+      q,
+      limit = 50,
+      offset = 0,
+    } = params;
+    const trimmedJustification = justification?.trim();
+    const response = await client.get('/v1/patient', {
+      params: {
+        q,
+        limit,
+        offset,
+        purpose_of_use: purpose_of_use ?? PurposeOfUse.OPERATIONS,
+        justification:
+          trimmedJustification && trimmedJustification.length >= 2
+            ? trimmedJustification
+            : 'Reception patient registry review',
+      },
+    });
+    return response.data;
+  },
+
+  async getPatientById(
+    patientId: string,
+    params?: { purpose_of_use?: PurposeOfUse; justification?: string }
+  ): Promise<PatientResponse> {
+    const trimmedJustification = params?.justification?.trim();
+    const response = await client.get(`/v1/patient/${patientId}`, {
+      params: {
+        purpose_of_use: params?.purpose_of_use ?? PurposeOfUse.OPERATIONS,
+        justification:
+          trimmedJustification && trimmedJustification.length >= 2
+            ? trimmedJustification
+            : 'Reception patient detail review',
       },
     });
     return response.data;
