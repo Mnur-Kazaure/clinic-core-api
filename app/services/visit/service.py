@@ -4,12 +4,11 @@ from uuid import UUID
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.clinical_priority_event import ClinicalPriorityEvent
-from app.models.triage_assessment import TriageAssessment
+from app.models.follow_up import FollowUp
 from app.models.visit import Visit
 from app.models.visit_status_history import VisitStatusHistory
 from app.services.visit.guards import guard_can_transition
@@ -17,6 +16,7 @@ from app.core.guards.patient_guards import ensure_patient_in_clinic
 from app.core.guards.user_guards import ensure_owner_for_service_line
 from app.shared.enums import (
     VisitStatus,
+    FollowUpStatus,
     AdmissionStatus,
     ClinicalPriorityLevel,
     UserRole,
@@ -89,10 +89,41 @@ class VisitService:
                 detail="Active visit already exists for this patient",
             )
 
+        linked_follow_up = None
+        if payload.linked_follow_up_id is not None:
+            linked_follow_up = (
+                self.db.query(FollowUp)
+                .filter(
+                    FollowUp.id == payload.linked_follow_up_id,
+                    FollowUp.clinic_id == current_user.clinic_id,
+                )
+                .with_for_update()
+                .first()
+            )
+            if linked_follow_up is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Linked follow-up not found",
+                )
+            if linked_follow_up.patient_id_canonical != payload.patient_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Linked follow-up patient mismatch",
+                )
+            if linked_follow_up.status not in {
+                FollowUpStatus.SCHEDULED,
+                FollowUpStatus.MISSED,
+            }:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Linked follow-up is not actionable",
+                )
+
         visit = Visit(
             clinic_id=current_user.clinic_id,
             patient_id=payload.patient_id,
             assigned_doctor_id=payload.assigned_doctor_id,
+            linked_follow_up_id=payload.linked_follow_up_id,
             status=VisitStatus.REGISTERED,
             service_line=payload.service_line,
             started_at=datetime.now(timezone.utc),  # 🔒 Legal start of care
@@ -112,6 +143,9 @@ class VisitService:
             payload={
                 "visit_id": str(visit.id),
                 "assigned_doctor_id": str(visit.assigned_doctor_id),
+                "linked_follow_up_id": str(linked_follow_up.id)
+                if linked_follow_up is not None
+                else None,
             },
         )
 
@@ -357,27 +391,12 @@ class VisitService:
                     },
                 )
 
-        # TRIAGED state is contract-driven through /triage/finalize.
+        # TRIAGED visit status is retired; triage is tracked via triage_state.
         if to_status == VisitStatus.TRIAGED and user.role != UserRole.SYSTEM:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "TRIAGE_USE_FINALIZE_ENDPOINT"},
+                detail={"code": "TRIAGE_STATUS_RETIRED"},
             )
-
-        if visit.status == VisitStatus.TRIAGED and to_status == VisitStatus.IN_CONSULTATION:
-            active_triage = (
-                self.db.query(TriageAssessment)
-                .filter(
-                    TriageAssessment.visit_id == visit.id,
-                    TriageAssessment.superseded_at.is_(None),
-                )
-                .first()
-            )
-            if active_triage is None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail={"code": "RETRIAGE_REQUIRED"},
-                )
 
         # 🔐 Guards operate on locked row
         guard_can_transition(
@@ -594,7 +613,11 @@ class VisitService:
     ) -> list[Visit]:
         q = self.db.query(Visit).filter(Visit.clinic_id == clinic_id)
         if status is not None:
-            q = q.filter(Visit.status == status)
+            if status == VisitStatus.REGISTERED:
+                # Treat legacy TRIAGED visits as REGISTERED for queue filtering.
+                q = q.filter(Visit.status.in_([VisitStatus.REGISTERED, VisitStatus.TRIAGED]))
+            else:
+                q = q.filter(Visit.status == status)
         else:
             q = q.filter(
                 Visit.status.notin_(
@@ -618,7 +641,11 @@ class VisitService:
             )
         )
         if status is not None:
-            q = q.filter(Visit.status == status)
+            if status == VisitStatus.REGISTERED:
+                # Treat legacy TRIAGED visits as REGISTERED for queue filtering.
+                q = q.filter(Visit.status.in_([VisitStatus.REGISTERED, VisitStatus.TRIAGED]))
+            else:
+                q = q.filter(Visit.status == status)
         else:
             q = q.filter(
                 Visit.status.notin_(
@@ -644,7 +671,11 @@ class VisitService:
             )
         )
         if status is not None:
-            q = q.filter(Visit.status == status)
+            if status == VisitStatus.REGISTERED:
+                # Treat legacy TRIAGED visits as REGISTERED for queue filtering.
+                q = q.filter(Visit.status.in_([VisitStatus.REGISTERED, VisitStatus.TRIAGED]))
+            else:
+                q = q.filter(Visit.status == status)
         else:
             q = q.filter(
                 Visit.status.notin_(
@@ -663,22 +694,6 @@ class VisitService:
             return []
 
         visit_ids = [visit.id for visit in visits]
-
-        triage_rows = (
-            self.db.query(
-                VisitStatusHistory.visit_id,
-                func.min(VisitStatusHistory.created_at).label("triaged_at"),
-            )
-            .filter(
-                VisitStatusHistory.visit_id.in_(visit_ids),
-                VisitStatusHistory.to_status == VisitStatus.TRIAGED,
-            )
-            .group_by(VisitStatusHistory.visit_id)
-            .all()
-        )
-        triaged_at_map = {
-            row.visit_id: row.triaged_at for row in triage_rows
-        }
 
         priority_events = (
             self.db.query(ClinicalPriorityEvent)
@@ -715,7 +730,7 @@ class VisitService:
             level = latest_priority.get(
                 visit.id, ClinicalPriorityLevel.ROUTINE
             )
-            triaged_at = _ensure_aware(triaged_at_map.get(visit.id) or visit.started_at)
+            triaged_at = _ensure_aware(visit.triaged_at or visit.started_at)
             started_at = _ensure_aware(visit.started_at)
             return (
                 priority_rank[level],

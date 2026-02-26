@@ -145,6 +145,14 @@ class PMRAdmissionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PMRFollowUpTimelineItem(BaseModel):
+    event_type: str
+    occurred_at: datetime
+    follow_up_id: UUID | None = None
+    chronic_recall_id: UUID | None = None
+    detail: str | None = None
+
+
 class PMRResponse(BaseModel):
     patient_id_requested: UUID
     patient_id_canonical: UUID
@@ -165,6 +173,7 @@ class PMRResponse(BaseModel):
     detail_level_downgraded: bool = False
     clinical_history_page: PMRClinicalHistoryPage
     clinical_history: list[PMRVisitClinicalHistory] = Field(default_factory=list)
+    follow_up_timeline: list[PMRFollowUpTimelineItem] = Field(default_factory=list)
 
 
 class MRNIssueResponse(BaseModel):

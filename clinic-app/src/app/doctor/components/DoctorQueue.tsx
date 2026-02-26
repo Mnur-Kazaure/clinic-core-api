@@ -27,10 +27,15 @@ export function DoctorQueue({
   const [startError, setStartError] = useState<string | null>(null);
   const [startingVisitId, setStartingVisitId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] =
-    useState<string>('IN_CONSULTATION');
+    useState<string>('REGISTERED');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const statusOptions = [
+    {
+      value: 'REGISTERED',
+      label: 'Registered',
+      color: 'bg-slate-100 text-slate-800',
+    },
     {
       value: 'IN_CONSULTATION',
       label: 'In Consultation',
@@ -40,11 +45,6 @@ export function DoctorQueue({
       value: 'EMERGENCY',
       label: 'Emergency',
       color: 'bg-red-100 text-red-800',
-    },
-    {
-      value: 'TRIAGED',
-      label: 'Triaged (Ready)',
-      color: 'bg-yellow-100 text-yellow-800',
     },
     {
       value: 'LAB_REQUESTED',
@@ -94,7 +94,9 @@ export function DoctorQueue({
       setStartingVisitId(visit.id);
 
       let visitForConsultation = visit;
-      if (visit.status === VisitStatus.TRIAGED) {
+      if (
+        visit.status === VisitStatus.REGISTERED
+      ) {
         visitForConsultation = await visitService.transitionVisit(visit.id, {
           to_status: VisitStatus.IN_CONSULTATION,
           expected_version: visit.version,
@@ -361,7 +363,7 @@ export function DoctorQueue({
                         </Button>
                       )}
 
-                      {visit.status === 'TRIAGED' && (
+                      {visit.status === 'REGISTERED' && (
                         <Button
                           size="sm"
                           variant="primary"

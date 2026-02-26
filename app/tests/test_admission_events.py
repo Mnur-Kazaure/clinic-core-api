@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -93,6 +94,18 @@ def test_admission_bed_events(db, clinic_id):
         actor=admin,
         reason="ICU transfer",
     )
+    bed_service.update_bed_status(
+        clinic_id=clinic_id,
+        bed_id=bed_a.id,
+        status_value=BedStatus.OUT_OF_SERVICE,
+        actor=admin,
+        reason="Maintenance",
+    )
+    admission_service.release_admission_bed(
+        admission_id=admission.id,
+        actor=admin,
+        reason="Moved to procedure room",
+    )
 
     admission_service.discharge_admission(
         admission_id=admission.id,
@@ -105,4 +118,76 @@ def test_admission_bed_events(db, clinic_id):
     assert "PATIENT_ADMITTED" in event_types
     assert "BED_ASSIGNED" in event_types
     assert "BED_TRANSFERRED" in event_types
+    assert "BED_STATUS_CHANGED" in event_types
+    assert "BED_RELEASED" in event_types
     assert "PATIENT_DISCHARGED" in event_types
+
+
+def test_bed_status_noop_is_audited(db, clinic_id):
+    admin = User(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        email=f"admin.noop.{uuid.uuid4()}@example.com",
+        password_hash="test",
+        full_name="Admin",
+        role=UserRole.ADMIN,
+        is_active=True,
+    )
+    db.add(admin)
+    db.commit()
+
+    ward = Ward(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        name="Ward Noop",
+        ward_type=WardType.GENERAL,
+        active=True,
+    )
+    db.add(ward)
+    db.commit()
+
+    bed = Bed(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        ward_id=ward.id,
+        bed_label="N1",
+        status=BedStatus.AVAILABLE,
+        active=True,
+    )
+    db.add(bed)
+    db.commit()
+
+    service = BedService(db)
+    service.update_bed_status(
+        clinic_id=clinic_id,
+        bed_id=bed.id,
+        status_value=BedStatus.OUT_OF_SERVICE,
+        actor=admin,
+        reason="Maintenance",
+    )
+    service.update_bed_status(
+        clinic_id=clinic_id,
+        bed_id=bed.id,
+        status_value=BedStatus.OUT_OF_SERVICE,
+        actor=admin,
+    )
+
+    events = (
+        db.query(EventLog)
+        .filter(
+            EventLog.event_type == "BED_STATUS_CHANGED",
+            EventLog.clinic_id == clinic_id,
+        )
+        .order_by(EventLog.created_at.asc())
+        .all()
+    )
+    target_events = [
+        event
+        for event in events
+        if json.loads(event.payload).get("bed_id") == str(bed.id)
+    ]
+    assert len(target_events) == 2
+    first_payload = json.loads(target_events[0].payload)
+    second_payload = json.loads(target_events[1].payload)
+    assert first_payload["no_op"] is False
+    assert second_payload["no_op"] is True

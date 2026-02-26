@@ -1,10 +1,13 @@
 # app/services/visit/guards.py
 
-from app.shared.enums import VisitStatus, UserRole, PrescriptionStatus
+from app.shared.enums import (
+    PrescriptionStatus,
+    UserRole,
+    VisitStatus,
+)
 from app.models.visit import Visit
 from app.models.lab_request import LabRequest
 from app.models.prescription import Prescription
-from app.models.triage_assessment import TriageAssessment
 
 
 def _normalize_role(role) -> UserRole:
@@ -19,9 +22,10 @@ def _normalize_role(role) -> UserRole:
 
 ALLOWED_TRANSITIONS = {
     VisitStatus.REGISTERED: [
-        VisitStatus.TRIAGED,
+        VisitStatus.IN_CONSULTATION,
         VisitStatus.CANCELLED,
     ],
+    # Legacy compatibility: allow already-triaged visits to continue flow.
     VisitStatus.TRIAGED: [
         VisitStatus.IN_CONSULTATION,
         VisitStatus.CANCELLED,
@@ -90,6 +94,10 @@ def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
     if visit.status == VisitStatus.COMPLETED:
         raise PermissionError("Visit already completed")
 
+    # TRIAGED visit status is retired; triage is tracked via triage_state.
+    if to_status == VisitStatus.TRIAGED:
+        raise PermissionError("TRIAGE_STATUS_RETIRED")
+
     # 2️⃣ Valid state transition
     allowed_targets = ALLOWED_TRANSITIONS.get(visit.status, [])
     if to_status not in allowed_targets:
@@ -97,28 +105,12 @@ def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
             f"Invalid transition from {visit.status} to {to_status}"
         )
 
-    # TRIAGED is contract-driven: assessments must be finalized through triage endpoint.
-    if to_status == VisitStatus.TRIAGED and role != UserRole.SYSTEM:
-        raise PermissionError("TRIAGE_USE_FINALIZE_ENDPOINT")
-
     # 3️⃣ Role-based authority
     allowed_for_role = ROLE_TRANSITION_MATRIX.get(role, [])
     if to_status not in allowed_for_role:
         raise PermissionError(
             f"Role {role} cannot transition visit to {to_status}"
         )
-
-    if visit.status == VisitStatus.TRIAGED and to_status == VisitStatus.IN_CONSULTATION:
-        active_triage = (
-            db.query(TriageAssessment)
-            .filter(
-                TriageAssessment.visit_id == visit.id,
-                TriageAssessment.superseded_at.is_(None),
-            )
-            .first()
-        )
-        if active_triage is None:
-            raise PermissionError("TRIAGE_RECORD_REQUIRED")
 
     # 3️⃣ Lab request must exist before marking visit as LAB_REQUESTED
     if to_status == VisitStatus.LAB_REQUESTED:

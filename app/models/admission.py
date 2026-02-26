@@ -2,7 +2,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKeyConstraint, String, CheckConstraint, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    Enum,
+    ForeignKeyConstraint,
+    String,
+    CheckConstraint,
+    UniqueConstraint,
+    Index,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -114,5 +123,13 @@ class Admission(Base):
         CheckConstraint(
             "(status != 'ACTIVE') OR (discharged_at IS NULL AND cancelled_at IS NULL)",
             name="ck_admissions_active_no_end",
+        ),
+        Index(
+            "uq_admissions_active_patient",
+            "clinic_id",
+            "patient_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+            sqlite_where=text("status = 'ACTIVE'"),
         ),
     )

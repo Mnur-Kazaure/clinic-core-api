@@ -1,6 +1,11 @@
 // /projects/clinic-monorepo/clinic-app/src/domains/visit/services/visitService.ts
 import client from '@/api/client';
-import { PurposeOfUse, VisitStatus, VisitServiceLine } from '@/shared/enums';
+import {
+  PurposeOfUse,
+  VisitServiceLine,
+  VisitStatus,
+  VisitTriageState,
+} from '@/shared/enums';
 import { VisitResponse } from '@/shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -8,6 +13,7 @@ export interface VisitCreateRequest {
   patient_id: string;
   assigned_doctor_id: string;
   service_line?: VisitServiceLine;
+  linked_follow_up_id?: string;
 }
 
 export type VisitCreateResponse = VisitResponse;
@@ -64,6 +70,7 @@ export type TriageMissingVitalReasonCode =
   | 'PATIENT_UNSTABLE'
   | 'CLINICAL_JUDGMENT'
   | 'REFUSED';
+export type TriageRecordStatus = 'DRAFT' | 'SIGNED';
 
 export interface TriageFinalizeRequest {
   expected_version: number;
@@ -92,6 +99,12 @@ export interface TriageSupersedeRequest extends TriageFinalizeRequest {
   correction_reason_text?: string;
 }
 
+export interface TriageDraftRequest extends TriageFinalizeRequest {}
+
+export interface TriageSignRequest {
+  expected_version: number;
+}
+
 export interface TriageAssessmentResponse {
   id: string;
   clinic_id: string;
@@ -100,8 +113,9 @@ export interface TriageAssessmentResponse {
   assessed_by: string;
   assessed_by_role: string;
   assessed_at: string;
-  finalized_by: string;
-  finalized_at: string;
+  record_status: TriageRecordStatus;
+  finalized_by: string | null;
+  finalized_at: string | null;
   triage_scale_version: string;
   acuity_level: ClinicalPriorityLevel;
   chief_complaint: string;
@@ -130,6 +144,13 @@ export interface TriageAssessmentResponse {
 }
 
 export interface TriageFinalizeResponse {
+  triage_assessment: TriageAssessmentResponse;
+  visit_id: string;
+  visit_status: VisitStatus;
+  visit_version: number;
+}
+
+export interface TriageDraftResponse {
   triage_assessment: TriageAssessmentResponse;
   visit_id: string;
   visit_status: VisitStatus;
@@ -310,5 +331,50 @@ export const visitService = {
   async getActiveTriage(visitId: string): Promise<TriageAssessmentResponse | null> {
     const response = await client.get(`/v1/visits/${visitId}/triage`);
     return response.data ?? null;
+  },
+
+  async saveTriageDraft(
+    visitId: string,
+    payload: TriageDraftRequest
+  ): Promise<TriageDraftResponse> {
+    const idempotencyKey = `visit-triage-draft-${visitId}-${uuidv4()}`;
+    const response = await client.post(
+      `/v1/visits/${visitId}/triage/draft`,
+      payload,
+      {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+      }
+    );
+    return response.data;
+  },
+
+  async signTriageAssessment(
+    visitId: string,
+    payload: TriageSignRequest
+  ): Promise<TriageFinalizeResponse> {
+    const idempotencyKey = `visit-triage-sign-${visitId}-${uuidv4()}`;
+    const response = await client.post(
+      `/v1/visits/${visitId}/triage/sign`,
+      payload,
+      {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+      }
+    );
+    return response.data;
+  },
+
+  async getTriageQueue(
+    triageState: VisitTriageState = VisitTriageState.PENDING
+  ): Promise<VisitResponse[]> {
+    const response = await client.get('/v1/visits/triage/queue', {
+      params: {
+        triage_state: triageState,
+      },
+    });
+    return response.data;
   },
 };

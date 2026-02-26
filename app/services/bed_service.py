@@ -1,6 +1,6 @@
 # app/services/bed_service.py
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -9,8 +9,11 @@ from sqlalchemy import and_, func, or_, cast, String
 from sqlalchemy.orm import Session
 
 from app.models.admission import Admission
+from app.models.admission_visit_link import AdmissionVisitLink
 from app.models.bed import Bed
 from app.models.bed_assignment import BedAssignment
+from app.models.chronic_recall import ChronicRecall
+from app.models.consultation import Consultation
 from app.models.patient import Patient
 from app.models.patient_mrn import PatientMRN
 from app.models.user import User
@@ -23,7 +26,14 @@ from app.schemas.ward import (
     WardAppendBedResponse,
     WardRetireBedResponse,
 )
-from app.shared.enums import AdmissionStatus, BedAssignmentType, BedStatus, MRNStatus, WardType
+from app.shared.enums import (
+    AdmissionStatus,
+    BedAssignmentType,
+    BedStatus,
+    MRNStatus,
+    RecordStatus,
+    WardType,
+)
 from app.services.event_service import EventService
 
 
@@ -31,6 +41,7 @@ class BedService:
     def __init__(self, db: Session):
         self.db = db
         self.event_service = EventService(db)
+        self.review_due_window = timedelta(hours=24)
 
     MAX_RANGE_BEDS = 200
 
@@ -361,6 +372,10 @@ class BedService:
             .offset(offset)
             .all()
         )
+        flags_map = self._build_inpatient_flags_map(
+            clinic_id=clinic_id,
+            admissions=[(row.admission_id, row.patient_id) for row in rows],
+        )
 
         items = [
             {
@@ -374,6 +389,8 @@ class BedService:
                 "patient_name": row.patient_name,
                 "patient_mrn": row.patient_mrn,
                 "assigned_at": row.assigned_at,
+                "review_due": flags_map.get(row.admission_id, {}).get("review_due", False),
+                "chronic_due": flags_map.get(row.admission_id, {}).get("chronic_due", False),
             }
             for row in rows
         ]
@@ -473,6 +490,11 @@ class BedService:
         active_assignment = next(
             (row for row in timeline_rows if row.released_at is None), None
         )
+        flags_map = self._build_inpatient_flags_map(
+            clinic_id=clinic_id,
+            admissions=[(admission.id, admission.patient_id)],
+        )
+        flags = flags_map.get(admission.id, {"review_due": False, "chronic_due": False})
 
         return {
             "admission_id": admission.id,
@@ -483,8 +505,70 @@ class BedService:
             "ward_name": active_assignment.ward_name if active_assignment else None,
             "bed_label": active_assignment.bed_label if active_assignment else None,
             "assigned_at": active_assignment.assigned_at if active_assignment else None,
+            "review_due": flags["review_due"],
+            "chronic_due": flags["chronic_due"],
             "timeline": timeline_items,
         }
+
+    def _build_inpatient_flags_map(
+        self,
+        *,
+        clinic_id: UUID,
+        admissions: list[tuple[UUID, UUID | None]],
+    ) -> dict[UUID, dict[str, bool]]:
+        if not admissions:
+            return {}
+
+        now = datetime.now(timezone.utc)
+        admission_ids = [item[0] for item in admissions]
+        patient_ids = [item[1] for item in admissions if item[1] is not None]
+
+        reviewed_rows = (
+            self.db.query(AdmissionVisitLink.admission_id)
+            .join(
+                Consultation,
+                and_(
+                    Consultation.visit_id == AdmissionVisitLink.visit_id,
+                    Consultation.clinic_id == AdmissionVisitLink.clinic_id,
+                ),
+            )
+            .filter(
+                AdmissionVisitLink.clinic_id == clinic_id,
+                AdmissionVisitLink.admission_id.in_(admission_ids),
+                Consultation.record_status == RecordStatus.SIGNED,
+                Consultation.signed_at.is_not(None),
+                Consultation.signed_at >= now - self.review_due_window,
+            )
+            .distinct()
+            .all()
+        )
+        recently_reviewed_ids = {row.admission_id for row in reviewed_rows}
+
+        chronic_due_patients = set()
+        if patient_ids:
+            chronic_due_rows = (
+                self.db.query(ChronicRecall.patient_id_canonical)
+                .filter(
+                    ChronicRecall.clinic_id == clinic_id,
+                    ChronicRecall.active.is_(True),
+                    ChronicRecall.generation_paused.is_(False),
+                    ChronicRecall.next_due_at <= now,
+                    ChronicRecall.patient_id_canonical.in_(patient_ids),
+                )
+                .distinct()
+                .all()
+            )
+            chronic_due_patients = {
+                row.patient_id_canonical for row in chronic_due_rows
+            }
+
+        flags: dict[UUID, dict[str, bool]] = {}
+        for admission_id, patient_id in admissions:
+            flags[admission_id] = {
+                "review_due": admission_id not in recently_reviewed_ids,
+                "chronic_due": patient_id in chronic_due_patients if patient_id else False,
+            }
+        return flags
 
     def create_ward(
         self,

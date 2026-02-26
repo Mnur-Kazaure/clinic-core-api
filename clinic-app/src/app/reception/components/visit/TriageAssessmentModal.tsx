@@ -7,11 +7,12 @@ import {
   ClinicalPriorityLevel,
   TriageAssessmentResponse,
   TriageComplaintSeverity,
+  TriageDraftRequest,
+  TriageDraftResponse,
   TriageFallbackReasonCode,
   TriageFinalizeAction,
   TriageFinalizeResponse,
   TriageMissingVitalReasonCode,
-  TriageSupersedeRequest,
   visitService,
 } from '@/domains/visit/services/visitService';
 
@@ -19,11 +20,11 @@ interface TriageAssessmentModalProps {
   isOpen: boolean;
   visitId: string;
   visitVersion: number;
-  mode: 'finalize' | 'supersede';
   currentUserRole?: string | null;
   existingAssessment?: TriageAssessmentResponse | null;
   onClose: () => void;
-  onSuccess: (response: TriageFinalizeResponse) => void;
+  onDraftSaved?: (response: TriageDraftResponse) => void;
+  onSigned: (response: TriageFinalizeResponse) => void;
 }
 
 type TriageFormState = {
@@ -44,8 +45,6 @@ type TriageFormState = {
   fallback_reason_text: string;
   referred_facility: string;
   referral_reason: string;
-  correction_reason_code: string;
-  correction_reason_text: string;
 };
 
 const RESPIRATORY_SIGNAL_TOKENS = ['RESP', 'BREATH', 'OXYGEN', 'SPO2', 'ASTHMA'];
@@ -53,18 +52,18 @@ const RESPIRATORY_SIGNAL_TOKENS = ['RESP', 'BREATH', 'OXYGEN', 'SPO2', 'ASTHMA']
 const ACUITY_OPTIONS: Array<{ value: ClinicalPriorityLevel; label: string; help: string }> = [
   {
     value: 'CRITICAL',
-    label: 'Critical',
-    help: 'Immediate life-threatening risk',
+    label: 'Emergency',
+    help: 'Immediate clinician response required',
   },
   {
     value: 'URGENT',
     label: 'Urgent',
-    help: 'Needs clinician review soon',
+    help: 'High risk, prioritize in clinical queue',
   },
   {
     value: 'ROUTINE',
     label: 'Routine',
-    help: 'Stable and can wait in queue',
+    help: 'Clinically stable, safe to wait',
   },
 ];
 
@@ -74,28 +73,18 @@ const COMPLAINT_SEVERITY_OPTIONS: TriageComplaintSeverity[] = [
   'SEVERE',
 ];
 
-const MISSING_VITAL_REASON_OPTIONS: Array<{
-  value: TriageMissingVitalReasonCode;
-  label: string;
-}> = [
+const MISSING_VITAL_REASON_OPTIONS: Array<{ value: TriageMissingVitalReasonCode; label: string }> = [
   { value: 'DEVICE_UNAVAILABLE', label: 'Device unavailable' },
   { value: 'PATIENT_UNSTABLE', label: 'Patient unstable' },
   { value: 'CLINICAL_JUDGMENT', label: 'Clinical judgment' },
-  { value: 'REFUSED', label: 'Patient refused' },
+  { value: 'REFUSED', label: 'Patient declined' },
 ];
 
 const FALLBACK_REASON_OPTIONS: Array<{ value: TriageFallbackReasonCode; label: string }> = [
-  { value: 'NO_TRIAGER_ON_DUTY', label: 'No triager on duty' },
-  { value: 'MASS_CASUALTY', label: 'Mass casualty' },
+  { value: 'NO_TRIAGER_ON_DUTY', label: 'No triage nurse/CHEW on duty' },
+  { value: 'MASS_CASUALTY', label: 'Mass casualty load' },
   { value: 'EMERGENCY_OVERRIDE', label: 'Emergency override' },
-  { value: 'OTHER', label: 'Other' },
-];
-
-const CORRECTION_REASON_OPTIONS = [
-  { value: 'VITALS_CORRECTION', label: 'Vitals correction' },
-  { value: 'ACUITY_REASSESSMENT', label: 'Acuity reassessment' },
-  { value: 'COMPLAINT_UPDATE', label: 'Complaint update' },
-  { value: 'OTHER', label: 'Other' },
+  { value: 'OTHER', label: 'Other documented reason' },
 ];
 
 const emptyFormState: TriageFormState = {
@@ -116,8 +105,6 @@ const emptyFormState: TriageFormState = {
   fallback_reason_text: '',
   referred_facility: '',
   referral_reason: '',
-  correction_reason_code: 'VITALS_CORRECTION',
-  correction_reason_text: '',
 };
 
 const parseApiDetail = (err: unknown): unknown => {
@@ -143,23 +130,31 @@ export function TriageAssessmentModal({
   isOpen,
   visitId,
   visitVersion,
-  mode,
   currentUserRole,
   existingAssessment,
   onClose,
-  onSuccess,
+  onDraftSaved,
+  onSigned,
 }: TriageAssessmentModalProps) {
   const [form, setForm] = useState<TriageFormState>(emptyFormState);
-  const [submitting, setSubmitting] = useState(false);
+  const [workingVersion, setWorkingVersion] = useState(visitVersion);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusNote, setStatusNote] = useState<string | null>(null);
 
   const isDoctor = currentUserRole === 'DOCTOR';
-  const isSupersede = mode === 'supersede';
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
+
+    setWorkingVersion(visitVersion);
+    setStatusNote(null);
+    setError(null);
+    setHasUnsavedChanges(false);
 
     if (existingAssessment) {
       setForm({
@@ -169,44 +164,23 @@ export function TriageAssessmentModal({
         chief_complaint: existingAssessment.chief_complaint ?? '',
         triage_note: existingAssessment.triage_note ?? '',
         danger_sign_codes: (existingAssessment.danger_sign_codes ?? []).join(', '),
-        temp_c:
-          existingAssessment.temp_c === null
-            ? ''
-            : String(existingAssessment.temp_c),
-        pulse_bpm:
-          existingAssessment.pulse_bpm === null
-            ? ''
-            : String(existingAssessment.pulse_bpm),
-        rr_bpm:
-          existingAssessment.rr_bpm === null
-            ? ''
-            : String(existingAssessment.rr_bpm),
-        sbp_mmhg:
-          existingAssessment.sbp_mmhg === null
-            ? ''
-            : String(existingAssessment.sbp_mmhg),
-        dbp_mmhg:
-          existingAssessment.dbp_mmhg === null
-            ? ''
-            : String(existingAssessment.dbp_mmhg),
-        spo2_pct:
-          existingAssessment.spo2_pct === null
-            ? ''
-            : String(existingAssessment.spo2_pct),
-        missing_vitals_reason_code:
-          existingAssessment.missing_vitals_reason_code ?? '',
+        temp_c: existingAssessment.temp_c === null ? '' : String(existingAssessment.temp_c),
+        pulse_bpm: existingAssessment.pulse_bpm === null ? '' : String(existingAssessment.pulse_bpm),
+        rr_bpm: existingAssessment.rr_bpm === null ? '' : String(existingAssessment.rr_bpm),
+        sbp_mmhg: existingAssessment.sbp_mmhg === null ? '' : String(existingAssessment.sbp_mmhg),
+        dbp_mmhg: existingAssessment.dbp_mmhg === null ? '' : String(existingAssessment.dbp_mmhg),
+        spo2_pct: existingAssessment.spo2_pct === null ? '' : String(existingAssessment.spo2_pct),
+        missing_vitals_reason_code: existingAssessment.missing_vitals_reason_code ?? '',
         fallback_reason_code: existingAssessment.fallback_reason_code ?? '',
         fallback_reason_text: existingAssessment.fallback_reason_text ?? '',
         referred_facility: existingAssessment.referred_facility ?? '',
         referral_reason: existingAssessment.referral_reason ?? '',
-        correction_reason_code: 'VITALS_CORRECTION',
-        correction_reason_text: '',
       });
-    } else {
-      setForm(emptyFormState);
+      return;
     }
-    setError(null);
-  }, [existingAssessment, isOpen]);
+
+    setForm(emptyFormState);
+  }, [existingAssessment, isOpen, visitVersion]);
 
   const dangerSignCodes = useMemo(
     () =>
@@ -237,6 +211,9 @@ export function TriageAssessmentModal({
 
   const updateForm = <K extends keyof TriageFormState>(key: K, value: TriageFormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setHasUnsavedChanges(true);
+    setStatusNote(null);
+    setError(null);
   };
 
   const validate = (): string | null => {
@@ -244,104 +221,135 @@ export function TriageAssessmentModal({
       return 'Chief complaint must be at least 3 characters.';
     }
     if (form.acuity_level === 'CRITICAL' && form.triage_note.trim().length < 5) {
-      return 'Critical triage requires a triage note (min 5 characters).';
+      return 'Emergency triage requires a clinical note (minimum 5 characters).';
     }
     if (missingVitalsReasonRequired && !form.missing_vitals_reason_code) {
-      return 'Select a missing vitals reason when required vitals are incomplete.';
+      return 'Select a reason for missing vital signs before saving.';
     }
     if (isDoctor && !form.fallback_reason_code) {
-      return 'Doctor fallback triage requires a fallback reason.';
+      return 'Doctor fallback triage requires a fallback reason code.';
     }
-    if (isDoctor && form.fallback_reason_code === 'OTHER' && form.fallback_reason_text.trim().length < 15) {
-      return 'Fallback reason text must be at least 15 characters for OTHER.';
+    if (
+      isDoctor &&
+      form.fallback_reason_code === 'OTHER' &&
+      form.fallback_reason_text.trim().length < 15
+    ) {
+      return 'Fallback reason narrative must be at least 15 characters for OTHER.';
     }
     if (form.action === 'REFER_OUT_IMMEDIATE') {
       if (form.referred_facility.trim().length < 3) {
-        return 'Referral facility is required for immediate referral.';
+        return 'Referral facility is required when disposition is immediate referral.';
       }
       if (form.referral_reason.trim().length < 3) {
-        return 'Referral reason is required for immediate referral.';
+        return 'Referral clinical reason is required for immediate referral.';
       }
-    }
-    if (isSupersede && form.correction_reason_code.trim().length < 2) {
-      return 'Correction reason code is required when updating triage.';
     }
     return null;
   };
 
-  const handleSubmit = async () => {
+  const buildDraftPayload = (): TriageDraftRequest => ({
+    expected_version: workingVersion,
+    action: form.action,
+    acuity_level: form.acuity_level,
+    chief_complaint: form.chief_complaint.trim(),
+    complaint_severity: form.complaint_severity,
+    triage_note: toOptionalString(form.triage_note),
+    danger_sign_codes: dangerSignCodes,
+    temp_c: toNumber(form.temp_c),
+    pulse_bpm: toNumber(form.pulse_bpm),
+    rr_bpm: toNumber(form.rr_bpm),
+    sbp_mmhg: toNumber(form.sbp_mmhg),
+    dbp_mmhg: toNumber(form.dbp_mmhg),
+    spo2_pct: toNumber(form.spo2_pct),
+    missing_vitals_reason_code: missingVitalsReasonRequired
+      ? form.missing_vitals_reason_code || undefined
+      : undefined,
+    is_doctor_fallback: isDoctor,
+    fallback_reason_code: isDoctor ? form.fallback_reason_code || undefined : undefined,
+    fallback_reason_text: isDoctor ? toOptionalString(form.fallback_reason_text) : undefined,
+    referred_facility:
+      form.action === 'REFER_OUT_IMMEDIATE' ? toOptionalString(form.referred_facility) : undefined,
+    referral_reason:
+      form.action === 'REFER_OUT_IMMEDIATE' ? toOptionalString(form.referral_reason) : undefined,
+  });
+
+  const persistDraft = async (): Promise<TriageDraftResponse | null> => {
     const validationError = validate();
     if (validationError) {
       setError(validationError);
-      return;
+      return null;
     }
 
+    const response = await visitService.saveTriageDraft(visitId, buildDraftPayload());
+    setWorkingVersion(response.visit_version);
+    setHasUnsavedChanges(false);
+    setStatusNote('Draft triage assessment saved successfully.');
+    onDraftSaved?.(response);
+    return response;
+  };
+
+  const handleSaveDraft = async () => {
     try {
-      setSubmitting(true);
+      setIsSavingDraft(true);
       setError(null);
-
-      const payloadBase = {
-        expected_version: visitVersion,
-        action: form.action,
-        acuity_level: form.acuity_level,
-        chief_complaint: form.chief_complaint.trim(),
-        complaint_severity: form.complaint_severity,
-        triage_note: toOptionalString(form.triage_note),
-        danger_sign_codes: dangerSignCodes,
-        temp_c: toNumber(form.temp_c),
-        pulse_bpm: toNumber(form.pulse_bpm),
-        rr_bpm: toNumber(form.rr_bpm),
-        sbp_mmhg: toNumber(form.sbp_mmhg),
-        dbp_mmhg: toNumber(form.dbp_mmhg),
-        spo2_pct: toNumber(form.spo2_pct),
-        missing_vitals_reason_code: missingVitalsReasonRequired
-          ? form.missing_vitals_reason_code || undefined
-          : undefined,
-        is_doctor_fallback: isDoctor,
-        fallback_reason_code: isDoctor ? form.fallback_reason_code || undefined : undefined,
-        fallback_reason_text: isDoctor ? toOptionalString(form.fallback_reason_text) : undefined,
-        referred_facility:
-          form.action === 'REFER_OUT_IMMEDIATE'
-            ? toOptionalString(form.referred_facility)
-            : undefined,
-        referral_reason:
-          form.action === 'REFER_OUT_IMMEDIATE'
-            ? toOptionalString(form.referral_reason)
-            : undefined,
-      };
-
-      let response: TriageFinalizeResponse;
-      if (isSupersede) {
-        const supersedePayload: TriageSupersedeRequest = {
-          ...payloadBase,
-          correction_reason_code: form.correction_reason_code.trim(),
-          correction_reason_text: toOptionalString(form.correction_reason_text),
-        };
-        response = await visitService.supersedeTriage(visitId, supersedePayload);
-      } else {
-        response = await visitService.finalizeTriage(visitId, payloadBase);
-      }
-      onSuccess(response);
+      await persistDraft();
     } catch (err: unknown) {
       const detail = parseApiDetail(err);
       if (detail && typeof detail === 'object') {
         const code = (detail as { code?: string }).code;
         if (code === 'VERSION_CONFLICT') {
-          setError('This visit was updated by someone else. Refresh and try again.');
+          setError('This visit changed while you were assessing triage. Refresh and retry.');
           return;
         }
-        if (code === 'TRIAGE_ALREADY_EXISTS') {
-          setError('A triage record already exists. Use Update Triage instead.');
-          return;
-        }
-        if (code === 'TRIAGE_INVALID_VISIT_STATE') {
-          setError('Triage is only allowed for registered or triaged visits.');
+        if (code === 'TRIAGE_ALREADY_SIGNED') {
+          setError('Triage is already signed for this visit.');
           return;
         }
       }
-      setError(typeof detail === 'string' ? detail : 'Unable to save triage assessment.');
+      setError(typeof detail === 'string' ? detail : 'Unable to save triage draft.');
     } finally {
-      setSubmitting(false);
+      setIsSavingDraft(false);
+    }
+  };
+
+  const handleSign = async () => {
+    try {
+      setIsSigning(true);
+      setError(null);
+
+      let currentVersion = workingVersion;
+      if (hasUnsavedChanges || !existingAssessment) {
+        const draft = await persistDraft();
+        if (!draft) {
+          return;
+        }
+        currentVersion = draft.visit_version;
+      }
+
+      const signed = await visitService.signTriageAssessment(visitId, {
+        expected_version: currentVersion,
+      });
+      onSigned(signed);
+    } catch (err: unknown) {
+      const detail = parseApiDetail(err);
+      if (detail && typeof detail === 'object') {
+        const code = (detail as { code?: string }).code;
+        if (code === 'VERSION_CONFLICT') {
+          setError('This visit changed while you were signing triage. Refresh and retry.');
+          return;
+        }
+        if (code === 'TRIAGE_DRAFT_REQUIRED') {
+          setError('Save a triage draft before signing.');
+          return;
+        }
+        if (code === 'TRIAGE_ALREADY_SIGNED') {
+          setError('Triage assessment is already signed for this visit.');
+          return;
+        }
+      }
+      setError(typeof detail === 'string' ? detail : 'Unable to sign triage assessment.');
+    } finally {
+      setIsSigning(false);
     }
   };
 
@@ -349,65 +357,65 @@ export function TriageAssessmentModal({
     return null;
   }
 
+  const busy = isSavingDraft || isSigning;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white shadow-xl">
-        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-6">
+      <div className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Triage Assessment
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+              Clinical Triage Assessment
             </p>
-            <h3 className="mt-1 text-xl font-semibold text-slate-900">
-              {isSupersede ? 'Update triage assessment' : 'Finalize triage assessment'}
-            </h3>
+            <h3 className="mt-1 text-xl font-semibold text-slate-900">Capture vital signs and acuity</h3>
             <p className="mt-1 text-sm text-slate-600">
-              {isDoctor
-                ? 'Doctor fallback triage is enabled and will be audited.'
-                : 'Capture vitals and acuity before queueing for consultation.'}
+              Complete triage documentation before the patient enters clinician consultation.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close triage form"
+            disabled={busy}
+            className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+            aria-label="Close triage assessment dialog"
           >
             ✕
           </button>
         </div>
 
-        <div className="space-y-6 px-6 py-5">
+        <div className="space-y-5 px-5 py-5 sm:px-6">
           {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
               {error}
+            </div>
+          )}
+          {statusNote && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              {statusNote}
             </div>
           )}
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Action
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Clinical disposition</label>
               <select
                 value={form.action}
                 onChange={(e) => updateForm('action', e.target.value as TriageFinalizeAction)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
               >
                 <option value="QUEUE_FOR_CONSULTATION">Queue for consultation</option>
-                <option value="REFER_OUT_IMMEDIATE">Refer out immediately</option>
+                <option value="REFER_OUT_IMMEDIATE">Immediate referral out</option>
               </select>
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Complaint severity
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Chief complaint severity</label>
               <select
                 value={form.complaint_severity}
                 onChange={(e) =>
                   updateForm('complaint_severity', e.target.value as TriageComplaintSeverity)
                 }
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
               >
                 {COMPLAINT_SEVERITY_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -419,17 +427,15 @@ export function TriageAssessmentModal({
           </section>
 
           <section>
-            <label className="mb-2 block text-sm font-medium text-slate-700">
-              Acuity level
-            </label>
-            <div className="grid gap-2 md:grid-cols-3">
+            <label className="mb-2 block text-sm font-medium text-slate-700">Clinical acuity</label>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3" role="radiogroup" aria-label="Clinical acuity">
               {ACUITY_OPTIONS.map((option) => (
                 <label
                   key={option.value}
-                  className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${
+                  className={`min-h-16 rounded-xl border px-3 py-3 text-sm transition ${
                     form.acuity_level === option.value
-                      ? 'border-blue-500 bg-blue-50 text-blue-900'
-                      : 'border-slate-200 bg-white text-slate-700'
+                      ? 'border-sky-500 bg-sky-50 text-sky-900'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                   }`}
                 >
                   <input
@@ -442,8 +448,8 @@ export function TriageAssessmentModal({
                     }
                     className="mr-2"
                   />
-                  <span className="font-medium">{option.label}</span>
-                  <span className="ml-2 text-xs text-slate-500">{option.help}</span>
+                  <span className="font-semibold">{option.label}</span>
+                  <span className="mt-1 block text-xs text-slate-500">{option.help}</span>
                 </label>
               ))}
             </div>
@@ -454,42 +460,36 @@ export function TriageAssessmentModal({
               label="Chief complaint"
               value={form.chief_complaint}
               onChange={(e) => updateForm('chief_complaint', e.target.value)}
-              placeholder="Describe presenting complaint"
+              placeholder="Patient's main presenting complaint"
             />
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Danger sign codes
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Danger signs</label>
               <textarea
                 value={form.danger_sign_codes}
                 onChange={(e) => updateForm('danger_sign_codes', e.target.value)}
                 rows={2}
-                placeholder="Comma-separated tokens, e.g. RESP_DISTRESS, BLEEDING"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                placeholder="e.g. RESP_DISTRESS, BLEEDING, CONVULSION"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
               />
             </div>
           </section>
 
           <section>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Triage note
-            </label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Clinical triage note</label>
             <textarea
               value={form.triage_note}
               onChange={(e) => updateForm('triage_note', e.target.value)}
               rows={3}
-              placeholder="Clinical note for triage decision"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              placeholder="Document key observations informing acuity decision"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
             />
           </section>
 
           <section>
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Vitals
-            </h4>
+            <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-600">Vital signs</h4>
             <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
               <Input
-                label="Temp (C)"
+                label="Temperature (C)"
                 value={form.temp_c}
                 onChange={(e) => updateForm('temp_c', e.target.value)}
                 placeholder="36.7"
@@ -501,19 +501,19 @@ export function TriageAssessmentModal({
                 placeholder="72"
               />
               <Input
-                label="Resp rate"
+                label="Resp. rate"
                 value={form.rr_bpm}
                 onChange={(e) => updateForm('rr_bpm', e.target.value)}
                 placeholder="18"
               />
               <Input
-                label="SBP (mmHg)"
+                label="Systolic BP"
                 value={form.sbp_mmhg}
                 onChange={(e) => updateForm('sbp_mmhg', e.target.value)}
                 placeholder="120"
               />
               <Input
-                label="DBP (mmHg)"
+                label="Diastolic BP"
                 value={form.dbp_mmhg}
                 onChange={(e) => updateForm('dbp_mmhg', e.target.value)}
                 placeholder="80"
@@ -527,9 +527,7 @@ export function TriageAssessmentModal({
             </div>
             {missingVitalsReasonRequired && (
               <div className="mt-3">
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Missing vitals reason
-                </label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Missing vitals reason</label>
                 <select
                   value={form.missing_vitals_reason_code}
                   onChange={(e) =>
@@ -538,7 +536,7 @@ export function TriageAssessmentModal({
                       e.target.value as '' | TriageMissingVitalReasonCode
                     )
                   }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
                 >
                   <option value="">Select reason</option>
                   {MISSING_VITAL_REASON_OPTIONS.map((option) => (
@@ -552,25 +550,20 @@ export function TriageAssessmentModal({
           </section>
 
           {isDoctor && (
-            <section className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <h4 className="text-sm font-semibold text-amber-900">Doctor fallback</h4>
+            <section className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <h4 className="text-sm font-semibold text-amber-900">Doctor fallback triage</h4>
               <p className="mt-1 text-xs text-amber-800">
-                Doctor triage is fallback-only and requires explicit reason.
+                Use only when no triage nurse/CHEW is available. This action is audit-tracked.
               </p>
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-amber-900">
-                    Fallback reason
-                  </label>
+                  <label className="mb-1 block text-sm font-medium text-amber-900">Fallback reason</label>
                   <select
                     value={form.fallback_reason_code}
                     onChange={(e) =>
-                      updateForm(
-                        'fallback_reason_code',
-                        e.target.value as '' | TriageFallbackReasonCode
-                      )
+                      updateForm('fallback_reason_code', e.target.value as '' | TriageFallbackReasonCode)
                     }
-                    className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+                    className="h-11 w-full rounded-xl border border-amber-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                   >
                     <option value="">Select reason</option>
                     {FALLBACK_REASON_OPTIONS.map((option) => (
@@ -582,15 +575,13 @@ export function TriageAssessmentModal({
                 </div>
                 {form.fallback_reason_code === 'OTHER' && (
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-amber-900">
-                      Reason text
-                    </label>
+                    <label className="mb-1 block text-sm font-medium text-amber-900">Reason narrative</label>
                     <textarea
                       value={form.fallback_reason_text}
                       onChange={(e) => updateForm('fallback_reason_text', e.target.value)}
                       rows={2}
-                      className="w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-                      placeholder="Explain fallback context (min 15 chars)"
+                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                      placeholder="Document fallback context clearly"
                     />
                   </div>
                 )}
@@ -599,61 +590,23 @@ export function TriageAssessmentModal({
           )}
 
           {form.action === 'REFER_OUT_IMMEDIATE' && (
-            <section className="rounded-lg border border-rose-200 bg-rose-50 p-3">
-              <h4 className="text-sm font-semibold text-rose-900">Referral details</h4>
+            <section className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+              <h4 className="text-sm font-semibold text-sky-900">Referral handover details</h4>
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Input
-                  label="Referred facility"
+                  label="Referral facility"
                   value={form.referred_facility}
                   onChange={(e) => updateForm('referred_facility', e.target.value)}
-                  placeholder="General Hospital ..."
+                  placeholder="Receiving facility"
                 />
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-rose-900">
-                    Referral reason
-                  </label>
+                  <label className="mb-1 block text-sm font-medium text-sky-900">Referral reason</label>
                   <textarea
                     value={form.referral_reason}
                     onChange={(e) => updateForm('referral_reason', e.target.value)}
                     rows={2}
-                    className="w-full rounded-md border border-rose-300 bg-white px-3 py-2 text-sm focus:border-rose-500 focus:outline-none"
-                    placeholder="Clinical reason for immediate referral"
-                  />
-                </div>
-              </div>
-            </section>
-          )}
-
-          {isSupersede && (
-            <section className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <h4 className="text-sm font-semibold text-slate-900">Correction details</h4>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Correction reason code
-                  </label>
-                  <select
-                    value={form.correction_reason_code}
-                    onChange={(e) => updateForm('correction_reason_code', e.target.value)}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  >
-                    {CORRECTION_REASON_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Correction note (optional)
-                  </label>
-                  <textarea
-                    value={form.correction_reason_text}
-                    onChange={(e) => updateForm('correction_reason_text', e.target.value)}
-                    rows={2}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    placeholder="Why this triage was superseded"
+                    className="w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                    placeholder="Clinical reason for transfer/referral"
                   />
                 </div>
               </div>
@@ -661,12 +614,21 @@ export function TriageAssessmentModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
-          <Button variant="secondary" size="sm" onClick={onClose} disabled={submitting}>
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSubmit} isLoading={submitting}>
-            {isSupersede ? 'Update Triage' : 'Finalize Triage'}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleSaveDraft}
+            disabled={busy}
+            isLoading={isSavingDraft}
+          >
+            Save Draft
+          </Button>
+          <Button variant="primary" size="sm" onClick={handleSign} disabled={busy} isLoading={isSigning}>
+            Sign & Complete Triage
           </Button>
         </div>
       </div>

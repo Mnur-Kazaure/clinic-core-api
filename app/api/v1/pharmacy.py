@@ -302,13 +302,17 @@ def dispense_medication(
     db=Depends(get_db),
 ):
     service = PharmacyService(db)
-
-    dispense = service.dispense(
-        visit=visit,
-        payload=payload,
-    )
-
-    return dispense
+    try:
+        dispense = service.dispense(
+            visit=visit,
+            payload=payload,
+        )
+        return dispense
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 # POST /pharmacy/prescriptions/{prescription_id}/dispense
@@ -324,8 +328,14 @@ def dispense_prescription(
     db=Depends(get_db),
 ):
     service = PharmacyService(db)
-    dispense = service.dispense_prescription(prescription, payload)
-    return dispense
+    try:
+        dispense = service.dispense_prescription(prescription, payload)
+        return dispense
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(
@@ -345,9 +355,15 @@ def fulfill_prescription_external(
     This writes an append-only fulfillment event and participates in visit auto-completion.
     """
     service = PharmacyService(db)
-    event = service.mark_dispensed_external(
-        prescription,
-        actor_id=current_user.id,
-        note=payload.note,
-    )
-    return event
+    try:
+        event = service.mark_dispensed_external(
+            prescription,
+            actor_id=current_user.id,
+            note=payload.note,
+        )
+        return event
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc

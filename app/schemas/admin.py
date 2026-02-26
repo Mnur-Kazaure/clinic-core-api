@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -17,6 +17,7 @@ class AuditTimelineItem(BaseModel):
     patient_id: Optional[UUID]
     resource: Optional[str] = None
     break_glass: Optional[bool] = None
+    event_payload: Optional[dict[str, Any]] = None
     occurred_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

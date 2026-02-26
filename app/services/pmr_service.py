@@ -8,6 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.models.consultation import Consultation
 from app.models.admission import Admission
+from app.models.chronic_recall import ChronicRecall
+from app.models.condition_profile import ConditionProfile
+from app.models.follow_up import FollowUp
+from app.models.follow_up_status_history import FollowUpStatusHistory
 from app.models.lab_request import LabRequest
 from app.models.lab_result import LabResult
 from app.models.patient import Patient
@@ -17,7 +21,14 @@ from app.models.patient_mrn import PatientMRN
 from app.models.prescription import Prescription
 from app.models.visit import Visit
 from app.services.access_log_service import AccessLogService
-from app.shared.enums import MRNStatus, VisitStatus, AdmissionStatus, UserRole
+from app.shared.enums import (
+    FollowUpGeneratedBy,
+    FollowUpStatus,
+    MRNStatus,
+    VisitStatus,
+    AdmissionStatus,
+    UserRole,
+)
 
 
 class PMRService:
@@ -132,6 +143,10 @@ class PMRService:
             clinic_id=clinic_id,
             visits=visits_page,
         )
+        follow_up_timeline = self._build_follow_up_timeline(
+            clinic_id=clinic_id,
+            identity_closure_ids=closure_ids,
+        )
 
         return {
             "patient_id_requested": requested_patient.id,
@@ -160,6 +175,7 @@ class PMRService:
                 "generated_at": datetime.now(timezone.utc),
             },
             "clinical_history": clinical_history,
+            "follow_up_timeline": follow_up_timeline,
         }
 
     def _get_patient(self, patient_id: UUID, clinic_id: UUID) -> Patient:
@@ -403,6 +419,111 @@ class PMRService:
                 }
             )
         return history
+
+    def _build_follow_up_timeline(
+        self,
+        *,
+        clinic_id: UUID,
+        identity_closure_ids: list[UUID],
+    ) -> list[dict]:
+        if not identity_closure_ids:
+            return []
+
+        timeline: list[dict] = []
+        recalls = (
+            self.db.query(ChronicRecall, ConditionProfile.display_name)
+            .join(
+                ConditionProfile,
+                (ConditionProfile.id == ChronicRecall.condition_profile_id)
+                & (ConditionProfile.clinic_id == ChronicRecall.clinic_id),
+            )
+            .filter(
+                ChronicRecall.clinic_id == clinic_id,
+                ChronicRecall.patient_id_canonical.in_(identity_closure_ids),
+            )
+            .all()
+        )
+        for recall, condition_name in recalls:
+            timeline.append(
+                {
+                    "event_type": "RECALL_CREATED",
+                    "occurred_at": recall.created_at,
+                    "follow_up_id": None,
+                    "chronic_recall_id": recall.id,
+                    "detail": condition_name,
+                }
+            )
+
+        follow_ups = (
+            self.db.query(FollowUp)
+            .filter(
+                FollowUp.clinic_id == clinic_id,
+                FollowUp.patient_id_canonical.in_(identity_closure_ids),
+            )
+            .all()
+        )
+        follow_up_ids = [row.id for row in follow_ups]
+        for follow_up in follow_ups:
+            if follow_up.generated_by == FollowUpGeneratedBy.SYSTEM:
+                timeline.append(
+                    {
+                        "event_type": "FOLLOW_UP_GENERATED",
+                        "occurred_at": follow_up.created_at,
+                        "follow_up_id": follow_up.id,
+                        "chronic_recall_id": follow_up.chronic_recall_id,
+                        "detail": "SYSTEM",
+                    }
+                )
+            if (
+                follow_up.status == FollowUpStatus.COMPLETED
+                and follow_up.completed_at is not None
+            ):
+                timeline.append(
+                    {
+                        "event_type": "FOLLOW_UP_COMPLETED",
+                        "occurred_at": follow_up.completed_at,
+                        "follow_up_id": follow_up.id,
+                        "chronic_recall_id": follow_up.chronic_recall_id,
+                        "detail": None,
+                    }
+                )
+
+        if follow_up_ids:
+            status_history_rows = (
+                self.db.query(FollowUpStatusHistory)
+                .filter(FollowUpStatusHistory.follow_up_id.in_(follow_up_ids))
+                .all()
+            )
+            for row in status_history_rows:
+                if row.new_status == FollowUpStatus.MISSED:
+                    timeline.append(
+                        {
+                            "event_type": "FOLLOW_UP_MISSED",
+                            "occurred_at": row.changed_at,
+                            "follow_up_id": row.follow_up_id,
+                            "chronic_recall_id": None,
+                            "detail": row.reason,
+                        }
+                    )
+                if row.new_status == FollowUpStatus.CANCELLED:
+                    timeline.append(
+                        {
+                            "event_type": "FOLLOW_UP_CANCELLED",
+                            "occurred_at": row.changed_at,
+                            "follow_up_id": row.follow_up_id,
+                            "chronic_recall_id": None,
+                            "detail": row.reason,
+                        }
+                    )
+
+        timeline.sort(
+            key=lambda item: (
+                item.get("occurred_at") or datetime.min.replace(tzinfo=timezone.utc),
+                item.get("event_type"),
+            ),
+            reverse=True,
+        )
+        return timeline
 
     def _resolve_canonical_patient_id(self, *, patient_id: UUID, clinic_id: UUID) -> UUID:
         visited = set()

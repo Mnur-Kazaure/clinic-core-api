@@ -12,6 +12,10 @@ import { Card } from '@/shared/Card';
 import { Tooltip } from '@/shared/Tooltip';
 import { ConsultationResponse, VisitResponse } from '@/shared/types';
 import { consultationService } from '@/domains/consultation/services/consultationService';
+import {
+  FollowUpListItem,
+  followUpService,
+} from '@/domains/followup/services/followupService';
 import { visitService } from '@/domains/visit/services/visitService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 import { doctorLabService } from '@/domains/lab/services/doctorLabService';
@@ -64,6 +68,20 @@ export default function DoctorPage() {
   const [activeConsultationsUpdatedAt, setActiveConsultationsUpdatedAt] =
     useState<Date | null>(null);
   const [queueRefreshToken, setQueueRefreshToken] = useState(0);
+  const [followUps, setFollowUps] = useState<{
+    overdue: FollowUpListItem[];
+    today: FollowUpListItem[];
+    upcoming: FollowUpListItem[];
+  }>({
+    overdue: [],
+    today: [],
+    upcoming: [],
+  });
+  const [followUpsLoading, setFollowUpsLoading] = useState(false);
+  const [followUpsError, setFollowUpsError] = useState<string | null>(null);
+  const [openingFollowUpVisitId, setOpeningFollowUpVisitId] = useState<string | null>(
+    null
+  );
 
   const getApiErrorDetail = (err: unknown): unknown => {
     if (!err || typeof err !== 'object' || !('response' in err)) {
@@ -159,22 +177,30 @@ export default function DoctorPage() {
   const maskId = (value?: string | null) =>
     value ? `${value.substring(0, 6)}…${value.substring(value.length - 4)}` : '—';
 
-  const getLabStatusForVisit = useCallback(async (visitId: string) => {
+  const getLabStatusForVisit = useCallback(
+    async (
+      visitId: string
+    ): Promise<{
+      labStatus: 'pending' | 'ready' | 'none';
+      labRequestedAt: string | null;
+    }> => {
     try {
       const requests = await doctorLabService.getLabRequestsByVisit(visitId);
       if (requests.length === 0) {
         return { labStatus: 'none' as const, labRequestedAt: null };
       }
       const latest = requests[0];
-      const hasCompleted = requests.some((r) => r.status === 'COMPLETED');
+      const hasPending = requests.some((r) => r.status === 'PENDING');
       return {
-        labStatus: hasCompleted ? 'ready' : 'pending',
+        labStatus: hasPending ? ('pending' as const) : ('ready' as const),
         labRequestedAt: latest.created_at,
       };
     } catch {
       return { labStatus: 'none' as const, labRequestedAt: null };
     }
-  }, []);
+  },
+    []
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -248,6 +274,47 @@ export default function DoctorPage() {
     isConsultationModalOpen,
   ]);
 
+  useEffect(() => {
+    let isMounted = true;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    async function loadFollowUps() {
+      try {
+        setFollowUpsLoading(true);
+        setFollowUpsError(null);
+        const data = await followUpService.getMyFollowUps();
+        if (isMounted) {
+          setFollowUps({
+            overdue: data.overdue || [],
+            today: data.today || [],
+            upcoming: data.upcoming || [],
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load clinician follow-ups:', error);
+        if (isMounted) {
+          setFollowUpsError('Unable to load follow-up worklist.');
+        }
+      } finally {
+        if (isMounted) {
+          setFollowUpsLoading(false);
+        }
+      }
+    }
+
+    loadFollowUps();
+    intervalId = setInterval(() => {
+      loadFollowUps();
+    }, 60000);
+
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [queueRefreshToken]);
+
   const stats = useMemo(() => {
     const today = new Date().toDateString();
     const totalToday = allVisits.filter(
@@ -303,6 +370,29 @@ export default function DoctorPage() {
   const handleViewVisit = (visit: VisitResponse) => {
     setSelectedVisit(visit);
     setIsVisitDetailsModalOpen(true);
+  };
+
+  const handleOpenFollowUpPatient = async (item: FollowUpListItem) => {
+    if (!item.active_visit_id) {
+      setActionWarning(
+        'No active visit is linked for this patient yet. Ask reception to start a linked follow-up visit.'
+      );
+      return;
+    }
+    try {
+      setOpeningFollowUpVisitId(item.id);
+      const visit = await visitService.getVisit(item.active_visit_id, {
+        purpose_of_use: PurposeOfUse.TREATMENT,
+        justification: 'Doctor follow-up patient review',
+      });
+      setSelectedVisit(visit);
+      setIsVisitDetailsModalOpen(true);
+    } catch (error) {
+      console.error('Failed to open follow-up patient context:', error);
+      setActionWarning('Unable to open patient context for this follow-up.');
+    } finally {
+      setOpeningFollowUpVisitId(null);
+    }
   };
 
   const handleConsultationComplete = (consultationId: string) => {
@@ -485,9 +575,40 @@ export default function DoctorPage() {
     setActionWarning(message);
   };
 
-  const handleLabRequestSuccess = (_labRequestId: string) => {
+  const handleLabRequestSuccess = async (_labRequestId: string) => {
     void _labRequestId;
     setIsLabRequestModalOpen(false);
+    if (!consultationVisit) {
+      return;
+    }
+
+    try {
+      const updatedVisit = await visitService.getVisit(consultationVisit.id, {
+        purpose_of_use: PurposeOfUse.TREATMENT,
+        justification: 'Refresh after lab request',
+      });
+      setConsultationVisit(updatedVisit);
+      setSelectedVisit(updatedVisit);
+      setAllVisits((prev) =>
+        prev.map((visit) => (visit.id === updatedVisit.id ? updatedVisit : visit))
+      );
+      const labState = await getLabStatusForVisit(updatedVisit.id);
+      setActiveConsultations((prev) =>
+        prev.map((entry) =>
+          entry.visit.id === updatedVisit.id
+            ? {
+                ...entry,
+                visit: updatedVisit,
+                labStatus: labState.labStatus,
+                labRequestedAt: labState.labRequestedAt,
+              }
+            : entry
+        )
+      );
+      setQueueRefreshToken((prev) => prev + 1);
+    } catch (error) {
+      console.error('Failed to refresh visit after lab request:', error);
+    }
   };
 
   const handlePrescriptionSuccess = (_prescriptionId: string) => {
@@ -537,7 +658,9 @@ export default function DoctorPage() {
     visit: VisitResponse,
     hasActiveConsultation: boolean
   ) => {
-    if (hasActiveConsultation || visit.status !== VisitStatus.TRIAGED) {
+    const requiresStatusTransition = visit.status === VisitStatus.REGISTERED;
+
+    if (hasActiveConsultation || !requiresStatusTransition) {
       setIsConsultationModalOpen(true);
       return;
     }
@@ -587,6 +710,97 @@ export default function DoctorPage() {
     }
   };
 
+  const renderFollowUpSection = (
+    title: string,
+    items: FollowUpListItem[],
+    tone: 'overdue' | 'today' | 'upcoming'
+  ) => {
+    const accentClass =
+      tone === 'overdue'
+        ? 'border-amber-200 bg-amber-50 text-amber-800'
+        : tone === 'today'
+        ? 'border-sky-200 bg-sky-50 text-sky-800'
+        : 'border-emerald-200 bg-emerald-50 text-emerald-800';
+
+    return (
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-semibold text-slate-900">{title}</p>
+          <span className={`rounded-full border px-2 py-0.5 text-xs ${accentClass}`}>
+            {items.length}
+          </span>
+        </div>
+        {items.length === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            No follow-ups in this group.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {items.slice(0, 8).map((item) => (
+              <div
+                key={item.id}
+                className="rounded-md border border-slate-200 bg-white px-3 py-2"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {item.patient_name || 'Unknown patient'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {item.patient_mrn
+                        ? `MRN ${item.patient_mrn}`
+                        : `Patient ${maskId(item.patient_id_canonical)}`}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">{item.reason}</p>
+                    <p className="text-xs text-slate-500">
+                      Due {new Date(item.due_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    isLoading={openingFollowUpVisitId === item.id}
+                    onClick={() => void handleOpenFollowUpPatient(item)}
+                  >
+                    Open Patient
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderFollowUpBoard = () => (
+    <Card title="My Follow-Ups" titleClassName="!text-[#0B4DA2]">
+      <div className="space-y-4">
+        {followUpsError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {followUpsError}
+          </div>
+        )}
+        {followUpsLoading && !followUpsError ? (
+          <div className="space-y-2">
+            <div className="shimmer h-10 rounded"></div>
+            <div className="shimmer h-10 rounded"></div>
+            <div className="shimmer h-10 rounded"></div>
+          </div>
+        ) : (
+          <>
+            {renderFollowUpSection('Overdue', followUps.overdue, 'overdue')}
+            {renderFollowUpSection('Today', followUps.today, 'today')}
+            {renderFollowUpSection('Upcoming', followUps.upcoming, 'upcoming')}
+          </>
+        )}
+        <p className="text-xs text-slate-500">
+          Follow-up completion is locked to linked signed visits only.
+        </p>
+      </div>
+    </Card>
+  );
+
   const getQuickActions = () => {
     if (!consultationVisit) {
       return (
@@ -612,7 +826,7 @@ export default function DoctorPage() {
     );
     const labStatus = activeEntry?.labStatus ?? 'none';
     const canStartConsultation = [
-      'TRIAGED',
+      'REGISTERED',
       'IN_CONSULTATION',
       'LAB_REQUESTED',
       'LAB_COMPLETED',
@@ -974,6 +1188,8 @@ export default function DoctorPage() {
           </div>
 
           <div className="space-y-6">
+            {renderFollowUpBoard()}
+
             <Card title="Active Consultations" titleClassName="!text-[#0B4DA2]">
               <div className="mb-3 text-xs text-gray-500">
                 Last updated:{' '}
@@ -1190,9 +1406,11 @@ export default function DoctorPage() {
           visitId={consultationVisit.id}
           visitSummary={{
             patientName: consultationVisit.patient_name,
+            patientId: consultationVisit.patient_id,
             status: consultationVisit.status,
             mrn: consultationVisit.patient_mrn,
             intakeEmergencyFlag: consultationVisit.intake_emergency_flag,
+            linkedFollowUpId: consultationVisit.linked_follow_up_id,
           }}
           isOpen={isConsultationModalOpen}
           onClose={() => {

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import {
   TriageAssessmentResponse,
+  TriageDraftResponse,
   TriageFinalizeResponse,
   visitService,
 } from '@/domains/visit/services/visitService';
@@ -59,7 +60,6 @@ export function QuickActionButtons({
   const [isTransitioning, setIsTransitioning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTriageModal, setShowTriageModal] = useState(false);
-  const [triageMode, setTriageMode] = useState<'finalize' | 'supersede'>('finalize');
   const [activeTriageAssessment, setActiveTriageAssessment] =
     useState<TriageAssessmentResponse | null>(null);
   const [loadingTriage, setLoadingTriage] = useState(false);
@@ -74,9 +74,7 @@ export function QuickActionButtons({
   );
   const canUseTriageAction =
     ['CHEW', 'MIDWIFE', 'DOCTOR'].includes(currentUserRole || '') &&
-    [VisitStatus.REGISTERED, VisitStatus.TRIAGED].includes(
-      currentStatus as VisitStatus
-    );
+    currentStatus === VisitStatus.REGISTERED;
 
   const parseApiDetail = (err: unknown): unknown => {
     if (!err || typeof err !== 'object' || !('response' in err)) {
@@ -94,7 +92,6 @@ export function QuickActionButtons({
       setError(null);
       const existing = await visitService.getActiveTriage(visitId);
       setActiveTriageAssessment(existing);
-      setTriageMode(existing ? 'supersede' : 'finalize');
       setShowTriageModal(true);
     } catch (err: unknown) {
       const detail = parseApiDetail(err);
@@ -108,7 +105,11 @@ export function QuickActionButtons({
     }
   };
 
-  const handleTriageSaved = async (response: TriageFinalizeResponse) => {
+  const handleTriageDraftSaved = (response: TriageDraftResponse) => {
+    setActiveTriageAssessment(response.triage_assessment);
+  };
+
+  const handleTriageSigned = async (response: TriageFinalizeResponse) => {
     setShowTriageModal(false);
     setActiveTriageAssessment(response.triage_assessment);
     try {
@@ -272,9 +273,7 @@ export function QuickActionButtons({
             disabled={isTransitioning !== null || loadingTriage}
             isLoading={loadingTriage}
           >
-            {currentStatus === VisitStatus.TRIAGED
-              ? 'Update Triage'
-              : 'Finalize Triage'}
+            {activeTriageAssessment ? 'Resume Triage' : 'Open Triage'}
           </Button>
         )}
 
@@ -322,11 +321,11 @@ export function QuickActionButtons({
         isOpen={showTriageModal}
         visitId={visitId}
         visitVersion={visitVersion}
-        mode={triageMode}
         currentUserRole={currentUserRole}
         existingAssessment={activeTriageAssessment}
         onClose={() => setShowTriageModal(false)}
-        onSuccess={handleTriageSaved}
+        onDraftSaved={handleTriageDraftSaved}
+        onSigned={handleTriageSigned}
       />
 
       {showCompleteConfirm && outstandingWork && (

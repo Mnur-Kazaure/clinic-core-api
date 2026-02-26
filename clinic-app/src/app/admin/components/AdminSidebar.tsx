@@ -22,6 +22,7 @@ const menuGroups = [
     items: [
       { label: 'Access Control', href: '/admin/access' },
       { label: 'Admission Requests', href: '/admin/admissions' },
+      { label: 'Follow-Up Config', href: '/admin/follow-up' },
       { label: 'Audit Log', href: '/admin/audit' },
       { label: 'System Settings', href: '/admin/settings' },
     ],

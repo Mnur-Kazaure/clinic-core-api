@@ -95,6 +95,8 @@ class LabService:
             .first()
         )
 
+        recorded_at = datetime.now(timezone.utc)
+
         result = LabResult(
             lab_request_id=lab_request.id,
             clinic_id=visit.clinic_id if visit else lab_request.clinic_id,
@@ -102,12 +104,16 @@ class LabService:
             result_value=result_value,
             result_unit=result_unit,
             reference_range=reference_range,
-            created_at=datetime.now(timezone.utc),
+            created_at=recorded_at,
             record_status=RecordStatus.SIGNED,
-            signed_at=datetime.now(timezone.utc),
+            signed_at=recorded_at,
         )
 
         self.db.add(result)
+        # Lab result submission is treated as handoff-complete for this request.
+        lab_request.status = LabRequestStatus.COMPLETED
+        lab_request.completed_at = recorded_at
+        self.db.add(lab_request)
         self.db.commit()
         self.db.refresh(result)
 

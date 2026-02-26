@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 from app.shared.enums import (
     ClinicalPriorityLevel,
+    TriageAssessmentRecordStatus,
     TriageComplaintSeverity,
     TriageFallbackReasonCode,
     TriageFinalizeAction,
@@ -36,6 +37,13 @@ class TriageAssessment(Base):
     assessed_by: Mapped[uuid.UUID] = mapped_column(nullable=False)
     assessed_by_role: Mapped[str] = mapped_column(String(50), nullable=False)
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    record_status: Mapped[TriageAssessmentRecordStatus] = mapped_column(
+        Enum(TriageAssessmentRecordStatus, name="triage_record_status"),
+        nullable=False,
+        default=TriageAssessmentRecordStatus.DRAFT,
+        server_default=TriageAssessmentRecordStatus.DRAFT.value,
+    )
 
     finalized_by: Mapped[uuid.UUID] = mapped_column(nullable=False)
     finalized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

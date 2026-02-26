@@ -38,7 +38,7 @@ export default function AdminLayout({
           return;
         }
 
-        if (user.role !== 'CLINIC_ADMIN') {
+        if (user.role !== 'CLINIC_ADMIN' && user.role !== 'ADMIN') {
           router.push('/confirm-access');
           return;
         }

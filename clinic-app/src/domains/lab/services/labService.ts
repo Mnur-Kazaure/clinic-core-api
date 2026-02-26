@@ -90,11 +90,24 @@ export const labService = {
   },
 
   async completeVisitLab(visitId: string): Promise<unknown> {
+    const visitResponse = await client.get(`/v1/visits/${visitId}`, {
+      params: {
+        purpose_of_use: PurposeOfUse.TREATMENT,
+        justification: 'Lab completion visit transition',
+      },
+    });
+    const expectedVersion = visitResponse.data?.version;
+    if (typeof expectedVersion !== 'number') {
+      throw new Error('Visit version is required for lab completion transition');
+    }
+
     const idempotencyKey = `lab-complete-${visitId}-${uuidv4()}`;
     const response = await client.post(
       `/v1/visits/${visitId}/transition`,
       {
         to_status: 'LAB_COMPLETED',
+        expected_version: expectedVersion,
+        mode: 'normal',
       },
       {
         headers: {

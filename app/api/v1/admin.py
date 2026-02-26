@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
@@ -22,7 +23,6 @@ from app.models.lab_result import LabResult
 from app.models.patient import Patient
 from app.models.user import User
 from app.models.visit import Visit
-from app.models.visit_status_history import VisitStatusHistory
 from app.schemas.admin import (
     AuditTimelineItem,
     ClinicHealthSnapshot,
@@ -108,6 +108,14 @@ def get_audit_timeline(
 
     items: list[AuditTimelineItem] = []
     for event in events:
+        payload: dict | None = None
+        if event.payload:
+            try:
+                parsed = json.loads(event.payload)
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except ValueError:
+                payload = None
         items.append(
             AuditTimelineItem(
                 id=event.id,
@@ -119,6 +127,7 @@ def get_audit_timeline(
                 patient_id=event.patient_id,
                 resource=None,
                 break_glass=None,
+                event_payload=payload,
                 occurred_at=event.created_at,
             )
         )
@@ -134,6 +143,7 @@ def get_audit_timeline(
                 patient_id=access.patient_id,
                 resource=access.resource,
                 break_glass=access.break_glass,
+                event_payload=None,
                 occurred_at=access.created_at,
             )
         )
@@ -153,7 +163,6 @@ def get_clinic_health(
 ):
     active_statuses = {
         VisitStatus.REGISTERED,
-        VisitStatus.TRIAGED,
         VisitStatus.IN_CONSULTATION,
         VisitStatus.LAB_REQUESTED,
         VisitStatus.LAB_COMPLETED,
@@ -253,30 +262,20 @@ def get_system_metrics(
 ):
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
 
-    triage_subq = (
-        db.query(
-            VisitStatusHistory.visit_id.label("visit_id"),
-            func.min(VisitStatusHistory.created_at).label("triaged_at"),
-        )
-        .filter(VisitStatusHistory.to_status == VisitStatus.TRIAGED)
-        .group_by(VisitStatusHistory.visit_id)
-        .subquery()
-    )
-
     triage_rows = (
         db.query(
             func.avg(
                 func.extract(
                     "epoch",
-                    triage_subq.c.triaged_at - Visit.started_at,
+                    Visit.triaged_at - Visit.started_at,
                 )
             ).label("avg_seconds"),
             func.count().label("samples"),
         )
-        .join(triage_subq, triage_subq.c.visit_id == Visit.id)
         .filter(
             Visit.clinic_id == current_user.clinic_id,
             Visit.started_at >= cutoff,
+            Visit.triaged_at.isnot(None),
         )
         .first()
     )
@@ -286,16 +285,16 @@ def get_system_metrics(
             func.avg(
                 func.extract(
                     "epoch",
-                    Consultation.started_at - triage_subq.c.triaged_at,
+                    Consultation.started_at - Visit.triaged_at,
                 )
             ).label("avg_seconds"),
             func.count().label("samples"),
         )
         .join(Visit, Consultation.visit_id == Visit.id)
-        .join(triage_subq, triage_subq.c.visit_id == Visit.id)
         .filter(
             Consultation.clinic_id == current_user.clinic_id,
             Consultation.started_at >= cutoff,
+            Visit.triaged_at.isnot(None),
         )
         .first()
     )

@@ -345,6 +345,23 @@ export function VisitDetailsModal({
     });
   };
 
+  const followUpEventLabel = (eventType: string) => {
+    switch (eventType) {
+      case 'RECALL_CREATED':
+        return 'Recall Created';
+      case 'FOLLOW_UP_GENERATED':
+        return 'Follow-Up Generated (System)';
+      case 'FOLLOW_UP_COMPLETED':
+        return 'Follow-Up Completed';
+      case 'FOLLOW_UP_MISSED':
+        return 'Follow-Up Missed';
+      case 'FOLLOW_UP_CANCELLED':
+        return 'Follow-Up Cancelled';
+      default:
+        return eventType.replaceAll('_', ' ');
+    }
+  };
+
   const maskId = (value?: string | null) =>
     value ? `${value.substring(0, 8)}...` : 'Unknown';
 
@@ -1441,6 +1458,39 @@ export function VisitDetailsModal({
                         <div className="mt-3 text-xs text-slate-500">
                           PMR access is logged for audit. This view is summary-only.
                         </div>
+                      </Card>
+
+                      <Card title="Follow-Up Timeline" titleClassName="text-[#0B4DA2]">
+                        {pmr.follow_up_timeline?.length ? (
+                          <div className="space-y-2">
+                            {pmr.follow_up_timeline.slice(0, 30).map((event, index) => (
+                              <div
+                                key={`${event.event_type}-${event.occurred_at}-${index}`}
+                                className="rounded-md border border-slate-200 bg-slate-50 p-3"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-sm font-semibold text-slate-900">
+                                    {followUpEventLabel(event.event_type)}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    {formatDateTime(event.occurred_at)}
+                                  </span>
+                                </div>
+                                <div className="mt-1 text-xs text-slate-600">
+                                  {event.follow_up_id ? `Follow-up ${maskId(event.follow_up_id)}` : ''}
+                                  {event.chronic_recall_id
+                                    ? ` • Recall ${maskId(event.chronic_recall_id)}`
+                                    : ''}
+                                  {event.detail ? ` • ${event.detail}` : ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-600">
+                            No follow-up timeline entries yet.
+                          </div>
+                        )}
                       </Card>
 
                       <Card title="Admissions" titleClassName="text-[#0B4DA2]">

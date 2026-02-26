@@ -94,5 +94,7 @@ def test_admin_audit_timeline_includes_access_and_events():
         sources = {item.source for item in items}
         assert "EVENT" in sources
         assert "ACCESS" in sources
+        event_item = next(item for item in items if item.source == "EVENT")
+        assert event_item.event_payload == {}
     finally:
         db.close()

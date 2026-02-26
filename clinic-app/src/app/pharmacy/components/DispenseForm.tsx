@@ -34,8 +34,16 @@ export function DispenseForm({
     ? `MRN ${prescription.patient_mrn}`
     : `ID ${maskId(prescription.patient_id)}`;
 
+  const getErrorMessage = (detail: unknown, fallback: string) =>
+    typeof detail === 'string' && detail.trim().length > 0 ? detail : fallback;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!pharmacistId) {
+      setError('Pharmacist session is unavailable. Refresh dashboard and retry.');
+      return;
+    }
 
     if (!quantity || quantity <= 0) {
       setError('Please enter a valid quantity');
@@ -66,15 +74,13 @@ export function DispenseForm({
       }, 2500);
     } catch (err: any) {
       console.error('Failed to dispense prescription:', err);
+      const detail = err?.response?.data?.detail;
       if (err.response?.status === 409) {
-        setError(
-          err.response?.data?.detail ||
-            'Prescription is not available for dispensing'
-        );
+        setError(getErrorMessage(detail, 'Prescription is not available for dispensing'));
       } else if (err.response?.status === 403) {
         setError('You do not have permission to dispense this prescription');
       } else {
-        setError(err.response?.data?.detail || 'Failed to dispense prescription');
+        setError(getErrorMessage(detail, 'Failed to dispense prescription'));
       }
     } finally {
       setIsSubmitting(false);
@@ -111,16 +117,13 @@ export function DispenseForm({
       }, 2500);
     } catch (err: any) {
       console.error('Failed to mark external fulfillment:', err);
+      const detail = err?.response?.data?.detail;
       if (err.response?.status === 409) {
-        setError(
-          err.response?.data?.detail || 'Prescription already fulfilled.'
-        );
+        setError(getErrorMessage(detail, 'Prescription already fulfilled.'));
       } else if (err.response?.status === 403) {
         setError('You do not have permission to fulfill this prescription');
       } else {
-        setError(
-          err.response?.data?.detail || 'Failed to mark external fulfillment'
-        );
+        setError(getErrorMessage(detail, 'Failed to mark external fulfillment'));
       }
     } finally {
       setIsSubmitting(false);

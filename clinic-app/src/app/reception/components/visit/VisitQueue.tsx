@@ -30,7 +30,6 @@ export function VisitQueue({
     { value: 'EMERGENCY', label: 'Emergency' },
     { value: 'ADMITTED', label: 'Admitted' },
     { value: 'REGISTERED', label: 'Registered' },
-    { value: 'TRIAGED', label: 'Triaged' },
     { value: 'IN_CONSULTATION', label: 'In Consultation' },
     { value: 'LAB_REQUESTED', label: 'Lab Requested' },
     { value: 'PHARMACY_PENDING', label: 'Pharmacy Pending' },
@@ -79,7 +78,7 @@ export function VisitQueue({
       EMERGENCY: { color: 'bg-red-100 text-red-800', label: 'Emergency' },
       ADMITTED: { color: 'bg-rose-100 text-rose-800', label: 'Admitted' },
       REGISTERED: { color: 'bg-blue-100 text-blue-800', label: 'Registered' },
-      TRIAGED: { color: 'bg-yellow-100 text-yellow-800', label: 'Triaged' },
+      TRIAGED: { color: 'bg-blue-100 text-blue-800', label: 'Registered' },
       IN_CONSULTATION: {
         color: 'bg-purple-100 text-purple-800',
         label: 'In Consultation',
@@ -177,6 +176,9 @@ export function VisitQueue({
     if (statusFilter === 'all') return true;
     if (statusFilter === 'EMERGENCY') return Boolean(visit.intake_emergency_flag);
     if (statusFilter === 'ADMITTED') return Boolean(visit.has_active_admission);
+    if (statusFilter === 'REGISTERED') {
+      return visit.status === 'REGISTERED' || visit.status === 'TRIAGED';
+    }
     return visit.status === statusFilter;
   });
 

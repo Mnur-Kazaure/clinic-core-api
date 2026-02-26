@@ -16,14 +16,12 @@ from app.shared.enums import (
     AdmissionDischargeDisposition,
 )
 from app.services.event_service import EventService
-from app.services.access_log_service import AccessLogService
 
 
 class AdmissionService:
     def __init__(self, db: Session):
         self.db = db
         self.event_service = EventService(db)
-        self.access_log_service = AccessLogService(db)
 
     def create_admission(
         self,
@@ -38,6 +36,7 @@ class AdmissionService:
         patient = (
             self.db.query(Patient)
             .filter(Patient.id == patient_id)
+            .with_for_update()
             .first()
         )
         if not patient:
@@ -52,6 +51,7 @@ class AdmissionService:
                 Admission.clinic_id == actor.clinic_id,
                 Admission.status == AdmissionStatus.ACTIVE,
             )
+            .with_for_update()
             .first()
         )
         if existing:
@@ -75,27 +75,30 @@ class AdmissionService:
         )
         self.db.add(admission)
         try:
+            self.db.flush()
+            self.event_service.build_event(
+                event_type="PATIENT_ADMITTED",
+                actor_id=actor.id,
+                actor_role=actor.role,
+                clinic_id=actor.clinic_id,
+                patient_id=patient_id,
+                emitter="admission",
+                payload={
+                    "admission_id": str(admission.id),
+                    "admission_type": admission_type.value,
+                    "status": admission.status.value,
+                    "admitted_at": admission.admitted_at.isoformat(),
+                },
+            )
             self.db.commit()
         except IntegrityError:
             self.db.rollback()
-            raise
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Active admission already exists for this patient",
+            )
 
         self.db.refresh(admission)
-
-        self.event_service.emit(
-            event_type="PATIENT_ADMITTED",
-            actor_id=actor.id,
-            actor_role=actor.role,
-            clinic_id=actor.clinic_id,
-            patient_id=patient_id,
-            emitter="admission",
-            payload={
-                "admission_id": str(admission.id),
-                "admission_type": admission_type.value,
-                "status": admission.status.value,
-                "admitted_at": admission.admitted_at.isoformat(),
-            },
-        )
         return admission
 
     def discharge_admission(
@@ -111,6 +114,7 @@ class AdmissionService:
         admission = (
             self.db.query(Admission)
             .filter(Admission.id == admission_id)
+            .with_for_update()
             .first()
         )
         if not admission:
@@ -162,6 +166,7 @@ class AdmissionService:
                 BedAssignment.admission_id == admission.id,
                 BedAssignment.released_at.is_(None),
             )
+            .with_for_update()
             .first()
         )
         bed_release_payload = None
@@ -179,10 +184,7 @@ class AdmissionService:
                 "release_reason": "discharge",
             }
 
-        self.db.commit()
-        self.db.refresh(admission)
-
-        self.event_service.emit(
+        self.event_service.build_event(
             event_type="PATIENT_DISCHARGED",
             actor_id=actor.id,
             actor_role=actor.role,
@@ -199,6 +201,8 @@ class AdmissionService:
                 "bed_release": bed_release_payload,
             },
         )
+        self.db.commit()
+        self.db.refresh(admission)
         return admission
 
     def cancel_admission(
@@ -211,6 +215,7 @@ class AdmissionService:
         admission = (
             self.db.query(Admission)
             .filter(Admission.id == admission_id)
+            .with_for_update()
             .first()
         )
         if not admission:
@@ -231,11 +236,77 @@ class AdmissionService:
                 BedAssignment.admission_id == admission.id,
                 BedAssignment.released_at.is_(None),
             )
+            .with_for_update()
             .first()
         )
         if active_assignment:
             active_assignment.released_at = datetime.now(timezone.utc)
 
+        self.event_service.build_event(
+            event_type="ADMISSION_CANCELLED",
+            actor_id=actor.id,
+            actor_role=actor.role,
+            clinic_id=admission.clinic_id,
+            patient_id=admission.patient_id,
+            emitter="admission",
+            payload={
+                "admission_id": str(admission.id),
+                "cancelled_at": admission.cancelled_at.isoformat(),
+                "reason": reason,
+            },
+        )
+        self.db.commit()
+        self.db.refresh(admission)
+        return admission
+
+    def release_admission_bed(
+        self,
+        *,
+        admission_id: UUID,
+        actor,
+        reason: str,
+    ) -> Admission:
+        admission = (
+            self.db.query(Admission)
+            .filter(Admission.id == admission_id)
+            .with_for_update()
+            .first()
+        )
+        if not admission:
+            raise HTTPException(status_code=404, detail="Admission not found")
+        if admission.clinic_id != actor.clinic_id:
+            raise HTTPException(status_code=403, detail="Cross-clinic access denied")
+        if admission.status != AdmissionStatus.ACTIVE:
+            raise HTTPException(status_code=409, detail="Admission not active")
+
+        active_assignment = (
+            self.db.query(BedAssignment)
+            .filter(
+                BedAssignment.admission_id == admission.id,
+                BedAssignment.released_at.is_(None),
+            )
+            .with_for_update()
+            .first()
+        )
+        if active_assignment is None:
+            raise HTTPException(status_code=409, detail="No active bed assignment")
+
+        active_assignment.released_at = datetime.now(timezone.utc)
+
+        self.event_service.build_event(
+            event_type="BED_RELEASED",
+            actor_id=actor.id,
+            actor_role=actor.role,
+            clinic_id=admission.clinic_id,
+            patient_id=admission.patient_id,
+            emitter="bed",
+            payload={
+                "admission_id": str(admission.id),
+                "bed_id": str(active_assignment.bed_id),
+                "released_at": active_assignment.released_at.isoformat(),
+                "reason": reason.strip(),
+            },
+        )
         self.db.commit()
         self.db.refresh(admission)
         return admission

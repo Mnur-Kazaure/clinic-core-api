@@ -116,6 +116,13 @@ export interface PMRResponse {
       };
     };
   }>;
+  follow_up_timeline?: Array<{
+    event_type: string;
+    occurred_at: string;
+    follow_up_id?: string | null;
+    chronic_recall_id?: string | null;
+    detail?: string | null;
+  }>;
 }
 
 export interface PMRQuery {

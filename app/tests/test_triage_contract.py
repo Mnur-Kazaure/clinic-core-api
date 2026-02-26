@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
@@ -14,6 +14,7 @@ from app.models.visit import Visit
 from app.shared.enums import (
     ClinicalPriorityLevel,
     ClinicalPrioritySource,
+    TriageAssessmentRecordStatus,
     Gender,
     TriageComplaintSeverity,
     TriageFallbackReasonCode,
@@ -21,8 +22,14 @@ from app.shared.enums import (
     UserRole,
     VisitServiceLine,
     VisitStatus,
+    VisitTriageState,
 )
-from app.schemas.triage import TriageFinalizeRequest, TriageSupersedeRequest
+from app.schemas.triage import (
+    TriageDraftRequest,
+    TriageFinalizeRequest,
+    TriageSignRequest,
+    TriageSupersedeRequest,
+)
 from app.services.triage_service import TriageService
 from app.services.visit.service import VisitService
 
@@ -106,7 +113,7 @@ def _payload(**overrides):
     return TriageFinalizeRequest(**payload)
 
 
-def test_triage_finalize_creates_assessment_and_transitions_to_triaged(db, clinic_id):
+def test_triage_finalize_creates_assessment_and_keeps_visit_registered(db, clinic_id):
     _seed_clinic(db, clinic_id)
     chew = _seed_user(db, clinic_id, UserRole.CHEW, "chew@triage.test")
     patient = _seed_patient(db, clinic_id)
@@ -126,7 +133,7 @@ def test_triage_finalize_creates_assessment_and_transitions_to_triaged(db, clini
         idempotency_key="triage-finalize-1",
     )
 
-    assert updated_visit.status == VisitStatus.TRIAGED
+    assert updated_visit.status == VisitStatus.REGISTERED
     assert updated_visit.version == 2
     assert triage.visit_id == visit.id
 
@@ -163,10 +170,10 @@ def test_transition_to_triaged_directly_is_blocked(db, clinic_id):
         )
 
     assert exc.value.status_code == 409
-    assert exc.value.detail["code"] == "TRIAGE_USE_FINALIZE_ENDPOINT"
+    assert exc.value.detail["code"] == "TRIAGE_STATUS_RETIRED"
 
 
-def test_start_consultation_requires_active_triage_assessment(db, clinic_id):
+def test_start_consultation_allowed_from_triaged_without_assessment(db, clinic_id):
     _seed_clinic(db, clinic_id)
     doctor = _seed_user(db, clinic_id, UserRole.DOCTOR, "doctor2@triage.test")
     patient = _seed_patient(db, clinic_id)
@@ -179,16 +186,14 @@ def test_start_consultation_requires_active_triage_assessment(db, clinic_id):
         status=VisitStatus.TRIAGED,
     )
 
-    with pytest.raises(HTTPException) as exc:
-        VisitService(db).transition_visit(
-            visit_id=visit.id,
-            to_status=VisitStatus.IN_CONSULTATION,
-            user=doctor,
-            expected_version=visit.version,
-        )
+    transitioned = VisitService(db).transition_visit(
+        visit_id=visit.id,
+        to_status=VisitStatus.IN_CONSULTATION,
+        user=doctor,
+        expected_version=visit.version,
+    )
 
-    assert exc.value.status_code == 409
-    assert exc.value.detail["code"] == "RETRIAGE_REQUIRED"
+    assert transitioned.status == VisitStatus.IN_CONSULTATION
 
 
 def test_doctor_fallback_requires_reason_code(db, clinic_id):
@@ -282,7 +287,7 @@ def test_triage_supersede_creates_new_active_assessment(db, clinic_id):
     db.refresh(first)
     assert first.superseded_at is not None
     assert replacement.supersedes_assessment_id == first.id
-    assert updated_visit.status == VisitStatus.TRIAGED
+    assert updated_visit.status == VisitStatus.REGISTERED
     assert updated_visit.version == 3
 
     active_rows = (
@@ -331,3 +336,210 @@ def test_doctor_fallback_with_other_requires_reason_text(db, clinic_id):
 
     assert exc.value.status_code == 422
     assert "fallback_reason_text" in str(exc.value.detail)
+
+
+def test_triage_draft_then_sign_updates_visit_mirror_fields(db, clinic_id):
+    _seed_clinic(db, clinic_id)
+    chew = _seed_user(db, clinic_id, UserRole.CHEW, "chew-draft@triage.test")
+    patient = _seed_patient(db, clinic_id)
+    visit = _seed_visit(
+        db,
+        clinic_id,
+        patient.id,
+        owner_id=chew.id,
+        service_line=VisitServiceLine.OPD,
+        status=VisitStatus.REGISTERED,
+    )
+
+    draft, draft_visit = TriageService(db).upsert_draft_assessment(
+        visit_id=visit.id,
+        payload=TriageDraftRequest(**_payload(expected_version=visit.version).model_dump()),
+        current_user=chew,
+        idempotency_key="triage-draft-1",
+    )
+
+    assert draft.record_status == TriageAssessmentRecordStatus.DRAFT
+    assert draft_visit.status == VisitStatus.REGISTERED
+    assert draft_visit.triage_state == VisitTriageState.PENDING
+
+    signed, signed_visit = TriageService(db).sign_assessment(
+        visit_id=visit.id,
+        payload=TriageSignRequest(expected_version=draft_visit.version),
+        current_user=chew,
+        idempotency_key="triage-sign-1",
+    )
+
+    assert signed.record_status == TriageAssessmentRecordStatus.SIGNED
+    assert signed_visit.status == VisitStatus.REGISTERED
+    assert signed_visit.triage_state == VisitTriageState.TRIAGED
+    assert signed_visit.triage_acuity == ClinicalPriorityLevel.URGENT
+    assert signed_visit.triaged_at is not None
+    assert signed_visit.triaged_by == chew.id
+
+
+def test_start_consultation_allowed_without_signed_triage_record(db, clinic_id):
+    _seed_clinic(db, clinic_id)
+    chew = _seed_user(db, clinic_id, UserRole.CHEW, "chew-triage@triage.test")
+    visit_owner = _seed_user(db, clinic_id, UserRole.DOCTOR, "doctor-start@triage.test")
+    patient = _seed_patient(db, clinic_id)
+    visit = _seed_visit(
+        db,
+        clinic_id,
+        patient.id,
+        owner_id=visit_owner.id,
+        service_line=VisitServiceLine.OPD,
+        status=VisitStatus.REGISTERED,
+    )
+
+    _, draft_visit = TriageService(db).upsert_draft_assessment(
+        visit_id=visit.id,
+        payload=TriageDraftRequest(**_payload(expected_version=visit.version).model_dump()),
+        current_user=chew,
+    )
+
+    transitioned = VisitService(db).transition_visit(
+        visit_id=visit.id,
+        to_status=VisitStatus.IN_CONSULTATION,
+        user=visit_owner,
+        expected_version=draft_visit.version,
+    )
+
+    assert transitioned.status == VisitStatus.IN_CONSULTATION
+
+
+def test_triage_queue_orders_pending_then_signed_acuity(db, clinic_id):
+    _seed_clinic(db, clinic_id)
+    chew = _seed_user(db, clinic_id, UserRole.CHEW, "chew-queue@triage.test")
+    doctor = _seed_user(db, clinic_id, UserRole.DOCTOR, "doctor-queue@triage.test")
+    now = datetime.now(timezone.utc)
+
+    pending_patient = _seed_patient(db, clinic_id)
+    pending_visit = _seed_visit(
+        db,
+        clinic_id,
+        pending_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.OPD,
+        status=VisitStatus.REGISTERED,
+    )
+    pending_visit.started_at = now - timedelta(minutes=20)
+    pending_visit.triage_state = VisitTriageState.PENDING
+    db.add(pending_visit)
+
+    anc_pending_patient = _seed_patient(db, clinic_id)
+    anc_pending_visit = _seed_visit(
+        db,
+        clinic_id,
+        anc_pending_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.ANC,
+        status=VisitStatus.REGISTERED,
+    )
+    anc_pending_visit.started_at = now - timedelta(minutes=10)
+    anc_pending_visit.triage_state = VisitTriageState.PENDING
+    db.add(anc_pending_visit)
+
+    urgent_patient = _seed_patient(db, clinic_id)
+    urgent_visit = _seed_visit(
+        db,
+        clinic_id,
+        urgent_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.OPD,
+        status=VisitStatus.REGISTERED,
+    )
+    urgent_visit.triage_state = VisitTriageState.TRIAGED
+    urgent_visit.triage_acuity = ClinicalPriorityLevel.URGENT
+    urgent_visit.triaged_at = now
+    db.add(urgent_visit)
+
+    critical_patient = _seed_patient(db, clinic_id)
+    critical_visit = _seed_visit(
+        db,
+        clinic_id,
+        critical_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.ANC,
+        status=VisitStatus.REGISTERED,
+    )
+    critical_visit.triage_state = VisitTriageState.TRIAGED
+    critical_visit.triage_acuity = ClinicalPriorityLevel.CRITICAL
+    critical_visit.triaged_at = now
+    db.add(critical_visit)
+
+    maternity_patient = _seed_patient(db, clinic_id)
+    maternity_visit = _seed_visit(
+        db,
+        clinic_id,
+        maternity_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.MATERNITY,
+        status=VisitStatus.REGISTERED,
+    )
+    maternity_visit.triage_state = VisitTriageState.PENDING
+    db.add(maternity_visit)
+    db.commit()
+
+    queue = TriageService(db).list_triage_queue(
+        current_user=chew,
+        triage_state=None,
+    )
+
+    queue_ids = [visit.id for visit in queue]
+    assert maternity_visit.id not in queue_ids
+    assert queue_ids[:4] == [
+        pending_visit.id,
+        anc_pending_visit.id,
+        critical_visit.id,
+        urgent_visit.id,
+    ]
+
+
+def test_triage_queue_scope_for_midwife_excludes_opd(db, clinic_id):
+    _seed_clinic(db, clinic_id)
+    midwife = _seed_user(db, clinic_id, UserRole.MIDWIFE, "midwife-queue@triage.test")
+    doctor = _seed_user(db, clinic_id, UserRole.DOCTOR, "doctor-midwife-queue@triage.test")
+
+    anc_patient = _seed_patient(db, clinic_id)
+    anc_visit = _seed_visit(
+        db,
+        clinic_id,
+        anc_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.ANC,
+        status=VisitStatus.REGISTERED,
+    )
+    anc_visit.triage_state = VisitTriageState.PENDING
+    db.add(anc_visit)
+
+    maternity_patient = _seed_patient(db, clinic_id)
+    maternity_visit = _seed_visit(
+        db,
+        clinic_id,
+        maternity_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.MATERNITY,
+        status=VisitStatus.REGISTERED,
+    )
+    maternity_visit.triage_state = VisitTriageState.PENDING
+    db.add(maternity_visit)
+
+    opd_patient = _seed_patient(db, clinic_id)
+    opd_visit = _seed_visit(
+        db,
+        clinic_id,
+        opd_patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.OPD,
+        status=VisitStatus.REGISTERED,
+    )
+    opd_visit.triage_state = VisitTriageState.PENDING
+    db.add(opd_visit)
+    db.commit()
+
+    queue = TriageService(db).list_triage_queue(current_user=midwife)
+    queue_ids = {visit.id for visit in queue}
+
+    assert anc_visit.id in queue_ids
+    assert maternity_visit.id in queue_ids
+    assert opd_visit.id not in queue_ids

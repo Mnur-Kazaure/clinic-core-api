@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.models.admission import Admission
 from app.models.bed import Bed
 from app.models.bed_assignment import BedAssignment
+from app.models.event_log import EventLog
 from app.models.patient import Patient
 from app.models.user import User
 from app.models.ward import Ward
@@ -100,6 +101,11 @@ def test_cancel_admission_releases_active_bed_assignment(db, clinic_id):
     )
     assert assignment is not None
     assert assignment.released_at is not None
+    event_types = {
+        event.event_type
+        for event in db.query(EventLog).all()
+    }
+    assert "ADMISSION_CANCELLED" in event_types
 
 
 def test_discharge_transfer_out_requires_destination(db, clinic_id):
@@ -152,4 +158,3 @@ def test_discharge_deceased_requires_pronounced_at(db, clinic_id):
             disposition=AdmissionDischargeDisposition.DECEASED,
         )
     assert exc.value.status_code == 422
-

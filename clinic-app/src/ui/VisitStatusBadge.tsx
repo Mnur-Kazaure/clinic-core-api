@@ -11,9 +11,9 @@ export function VisitStatusBadge({ status, size = 'md' }: VisitStatusBadgeProps)
       icon: '📝',
     },
     TRIAGED: {
-      color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      label: 'Triaged',
-      icon: '🩺',
+      color: 'bg-blue-100 text-blue-800 border-blue-200',
+      label: 'Registered',
+      icon: '📝',
     },
     IN_CONSULTATION: {
       color: 'bg-purple-100 text-purple-800 border-purple-200',

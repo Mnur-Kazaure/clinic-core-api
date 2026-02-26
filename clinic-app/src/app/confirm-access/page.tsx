@@ -36,8 +36,7 @@ export default function ConfirmAccessPage() {
         }
         
         // Validate role is supported
-        // const route = roleRoutes[user.role as keyof typeof roleRoutes];
-        const route = roleRoutes[user.role as UserRole];
+        const route = roleRoutes[user.role as keyof typeof roleRoutes];
         if (!route) {
           console.log(`❌ [DEBUG] Unsupported role: ${user.role}`);
           setErrorMessage(`Role "${user.role}" is not supported.`);

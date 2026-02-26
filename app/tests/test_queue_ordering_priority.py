@@ -5,11 +5,11 @@ from app.models.clinic import Clinic
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.visit import Visit
-from app.models.visit_status_history import VisitStatusHistory
 from app.models.clinical_priority_event import ClinicalPriorityEvent
 from app.services.visit.service import VisitService
 from app.shared.enums import (
     VisitStatus,
+    VisitTriageState,
     Gender,
     UserRole,
     ClinicalPriorityLevel,
@@ -59,7 +59,9 @@ def test_queue_ordering_by_priority_and_triage(db, clinic_id):
         clinic_id=clinic_id,
         patient_id=patient_a.id,
         assigned_doctor_id=doctor.id,
-        status=VisitStatus.TRIAGED,
+        status=VisitStatus.REGISTERED,
+        triage_state=VisitTriageState.TRIAGED,
+        triaged_at=now + timedelta(minutes=1),
         started_at=now + timedelta(minutes=1),
     )
     visit_b = Visit(
@@ -67,7 +69,9 @@ def test_queue_ordering_by_priority_and_triage(db, clinic_id):
         clinic_id=clinic_id,
         patient_id=patient_b.id,
         assigned_doctor_id=doctor.id,
-        status=VisitStatus.TRIAGED,
+        status=VisitStatus.REGISTERED,
+        triage_state=VisitTriageState.TRIAGED,
+        triaged_at=now,
         started_at=now,
     )
     visit_c = Visit(
@@ -95,28 +99,6 @@ def test_queue_ordering_by_priority_and_triage(db, clinic_id):
         started_at=now + timedelta(minutes=4),
     )
     db.add_all([visit_a, visit_b, visit_c, visit_d, visit_e])
-    db.commit()
-
-    db.add_all(
-        [
-            VisitStatusHistory(
-                id=uuid.uuid4(),
-                visit_id=visit_a.id,
-                from_status=VisitStatus.REGISTERED,
-                to_status=VisitStatus.TRIAGED,
-                changed_by=doctor.id,
-                created_at=now + timedelta(minutes=1),
-            ),
-            VisitStatusHistory(
-                id=uuid.uuid4(),
-                visit_id=visit_b.id,
-                from_status=VisitStatus.REGISTERED,
-                to_status=VisitStatus.TRIAGED,
-                changed_by=doctor.id,
-                created_at=now,
-            ),
-        ]
-    )
     db.commit()
 
     db.add_all(

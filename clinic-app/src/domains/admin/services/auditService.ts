@@ -10,6 +10,7 @@ export interface AuditTimelineItem {
   patient_id?: string | null;
   resource?: string | null;
   break_glass?: boolean | null;
+  event_payload?: Record<string, unknown> | null;
   occurred_at: string;
 }
 

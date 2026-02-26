@@ -3,6 +3,10 @@
 This script is idempotent:
 - creates/updates one clinic
 - creates/updates RECEPTION, CHEW, MIDWIFE, ADMIN users by email
+
+Safety:
+- by default, refuses to overwrite non-E2E user accounts
+- pass --allow-overwrite-existing only when intentionally reusing real accounts
 """
 
 from __future__ import annotations
@@ -28,6 +32,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--midwife-password", required=True)
     parser.add_argument("--admin-email", default=None)
     parser.add_argument("--admin-password", default=None)
+    parser.add_argument(
+        "--allow-overwrite-existing",
+        action="store_true",
+        help="Allow overwriting existing non-E2E users by email.",
+    )
     return parser.parse_args()
 
 
@@ -39,10 +48,17 @@ def _upsert_user(
     password: str,
     full_name: str,
     role_value: str,
+    allow_overwrite_existing: bool,
 ) -> None:
     user = db.query(User).filter(User.email == email).first()
     password_hash = _hash_password(password)
     if user:
+        is_e2e_account = user.full_name.startswith("E2E ")
+        if not allow_overwrite_existing and not is_e2e_account:
+            raise RuntimeError(
+                "Refusing to overwrite non-E2E user account "
+                f"({email}). Re-run with --allow-overwrite-existing only if intentional."
+            )
         user.clinic_id = clinic_id
         user.full_name = full_name
         user.role = role_value
@@ -105,6 +121,7 @@ def main() -> None:
             password=args.reception_password,
             full_name="E2E Reception",
             role_value=UserRole.RECEPTION.value,
+            allow_overwrite_existing=args.allow_overwrite_existing,
         )
         chew_role_value = _resolve_role_value("CHEW", "DOCTOR")
         _upsert_user(
@@ -114,6 +131,7 @@ def main() -> None:
             password=args.chew_password,
             full_name="E2E CHEW",
             role_value=chew_role_value,
+            allow_overwrite_existing=args.allow_overwrite_existing,
         )
         _upsert_user(
             db,
@@ -122,6 +140,7 @@ def main() -> None:
             password=args.chew_password,
             full_name="E2E CHEW Colleague",
             role_value=chew_role_value,
+            allow_overwrite_existing=args.allow_overwrite_existing,
         )
         midwife_role_value = _resolve_role_value("MIDWIFE", "LAB")
         _upsert_user(
@@ -131,6 +150,7 @@ def main() -> None:
             password=args.midwife_password,
             full_name="E2E Midwife",
             role_value=midwife_role_value,
+            allow_overwrite_existing=args.allow_overwrite_existing,
         )
         _upsert_user(
             db,
@@ -139,6 +159,7 @@ def main() -> None:
             password=args.midwife_password,
             full_name="E2E Midwife Colleague",
             role_value=midwife_role_value,
+            allow_overwrite_existing=args.allow_overwrite_existing,
         )
         clinic_admin_role_value = _resolve_role_value("CLINIC_ADMIN", "ADMIN")
         _upsert_user(
@@ -148,6 +169,7 @@ def main() -> None:
             password=admin_password,
             full_name="E2E Clinic Admin",
             role_value=clinic_admin_role_value,
+            allow_overwrite_existing=args.allow_overwrite_existing,
         )
 
         db.commit()

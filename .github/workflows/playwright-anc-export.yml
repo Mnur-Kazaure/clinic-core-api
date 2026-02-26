@@ -100,6 +100,25 @@ jobs:
           test -n "$E2E_MIDWIFE_EMAIL" || (echo "Missing E2E_MIDWIFE_EMAIL secret" && exit 1)
           test -n "$E2E_MIDWIFE_PASSWORD" || (echo "Missing E2E_MIDWIFE_PASSWORD secret" && exit 1)
 
+      - name: Derive isolated e2e identities
+        run: |
+          derive_email() {
+            local email="$1"
+            local suffix="$2"
+            local local_part="${email%@*}"
+            local domain_part="${email#*@}"
+            echo "${local_part}+e2e-${suffix}@${domain_part}"
+          }
+
+          base_admin_email="${E2E_ADMIN_EMAIL:-$E2E_RECEPTION_EMAIL}"
+
+          {
+            echo "E2E_RECEPTION_EMAIL=$(derive_email "$E2E_RECEPTION_EMAIL" "reception")"
+            echo "E2E_CHEW_EMAIL=$(derive_email "$E2E_CHEW_EMAIL" "chew")"
+            echo "E2E_MIDWIFE_EMAIL=$(derive_email "$E2E_MIDWIFE_EMAIL" "midwife")"
+            echo "E2E_ADMIN_EMAIL=$(derive_email "$base_admin_email" "admin")"
+          } >> "$GITHUB_ENV"
+
       - name: Run migrations
         run: alembic upgrade head
 

@@ -139,10 +139,23 @@ def test_bed_occupancy_unique_constraints():
         db.rollback()
 
         # Same bed cannot be active for another admission
+        patient_b = Patient(
+            id=uuid.uuid4(),
+            clinic_id=clinic.id,
+            full_name="Bed Patient B",
+            date_of_birth=datetime(2001, 1, 1).date(),
+            gender=Gender.MALE,
+            phone_number="001",
+            address="Test B",
+            occupation="Test",
+        )
+        db.add(patient_b)
+        db.commit()
+
         admission_b = Admission(
             id=uuid.uuid4(),
             clinic_id=clinic.id,
-            patient_id=patient.id,
+            patient_id=patient_b.id,
             admission_type=AdmissionType.ELECTIVE,
             status=AdmissionStatus.ACTIVE,
             admitted_at=datetime.now(timezone.utc),
