@@ -9,6 +9,7 @@ import { StartVisitModal } from '@/app/reception/components/visit/StartVisitModa
 import { VisitDetailsModal } from '@/app/reception/components/visit/VisitDetailsModal';
 import { VisitQueue } from '@/app/reception/components/visit/VisitQueue';
 import { PatientRegistrationForm } from '@/app/reception/components/patient/PatientRegistrationForm';
+import { PatientRegistryPanel } from '@/app/reception/components/patient/PatientRegistryPanel';
 import { VisitResponse } from '@/shared/types';
 import { visitService } from '@/domains/visit/services/visitService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
@@ -641,6 +642,10 @@ export default function ReceptionPage() {
               key={refreshQueue}
             />
           </div>
+        </div>
+
+        <div className="mt-8">
+          <PatientRegistryPanel />
         </div>
 
         <StartVisitModal
