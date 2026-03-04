@@ -1,6 +1,6 @@
 # app/schemas/patient.py
 from uuid import UUID
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel, Field, ConfigDict
 from app.shared.enums import Gender, IdentityState, BillingReasonCode
 
@@ -37,5 +37,14 @@ class PatientReadSchema(BaseModel):
     patient_mrn: str | None = None
     identity_state: IdentityState | None = None
     created_reason: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PatientListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[PatientReadSchema]

@@ -9,6 +9,7 @@ import { StaffDirectory } from './components/StaffDirectory';
 import { ClinicSettingsForm } from './components/ClinicSettingsForm';
 import { Card } from '@/shared/Card';
 import { PaymentOversightCard } from './components/PaymentOversightCard';
+import { PatientRegistrationMetrics } from './components/PatientRegistrationMetrics';
 
 const statCards = [
   {
@@ -71,6 +72,10 @@ export default function AdminPage() {
 
       <section id="quick-actions">
         <AdminQuickActions />
+      </section>
+
+      <section id="patient-metrics">
+        <PatientRegistrationMetrics />
       </section>
 
       <section id="payment-oversight">

@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.models.clinic import Clinic
 from app.models.patient import Patient
+from app.models.patient_mrn import PatientMRN
 from app.schemas.patient import PatientCreateSchema
-from app.shared.enums import IdentityState
+from app.shared.enums import IdentityState, MRNStatus
 from app.services.mrn_service import MRNService
 
 
@@ -96,11 +97,94 @@ class PatientService:
         if phone_number:
             query = query.filter(Patient.phone_number.ilike(f"%{phone_number}%"))
 
-        return (
+        patients = (
             query.order_by(Patient.full_name.asc())
             .limit(limit)
             .all()
         )
+        self._attach_active_mrns(clinic_id=clinic_id, patients=patients)
+        return patients
+
+    def list_patients(
+        self,
+        *,
+        clinic_id,
+        q: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        query = self.db.query(Patient).filter(Patient.clinic_id == clinic_id)
+
+        if q:
+            pattern = f"%{q}%"
+            query = query.filter(
+                or_(
+                    Patient.full_name.ilike(pattern),
+                    Patient.phone_number.ilike(pattern),
+                    Patient.address.ilike(pattern),
+                    Patient.occupation.ilike(pattern),
+                )
+            )
+
+        total = query.count()
+        patients = (
+            query.order_by(Patient.created_at.desc(), Patient.full_name.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        self._attach_active_mrns(clinic_id=clinic_id, patients=patients)
+
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": patients,
+        }
+
+    def get_patient(self, *, clinic_id, patient_id):
+        patient = (
+            self.db.query(Patient)
+            .filter(
+                Patient.id == patient_id,
+                Patient.clinic_id == clinic_id,
+            )
+            .first()
+        )
+        if patient is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Patient not found",
+            )
+        self._attach_active_mrns(clinic_id=clinic_id, patients=[patient])
+        return patient
+
+    def _attach_active_mrns(self, *, clinic_id, patients: list[Patient]) -> None:
+        if not patients:
+            return
+
+        patient_ids = [patient.id for patient in patients]
+        mrn_rows = (
+            self.db.query(PatientMRN.patient_id, PatientMRN.mrn)
+            .filter(
+                PatientMRN.clinic_id == clinic_id,
+                PatientMRN.patient_id.in_(patient_ids),
+                PatientMRN.status == MRNStatus.ACTIVE,
+            )
+            .order_by(
+                PatientMRN.patient_id.asc(),
+                PatientMRN.issued_at.desc(),
+            )
+            .all()
+        )
+
+        mrn_map: dict = {}
+        for patient_id, mrn in mrn_rows:
+            if patient_id not in mrn_map:
+                mrn_map[patient_id] = mrn
+
+        for patient in patients:
+            patient.patient_mrn = mrn_map.get(patient.id)
 
 
 
