@@ -73,7 +73,12 @@ async function seedPendingAdmissionRequest(
   request: import('@playwright/test').APIRequestContext,
   receptionCreds: Credentials,
   adminCreds: Credentials
-): Promise<{ patientName: string; patientId: string; admissionReason: string }> {
+): Promise<{
+  patientName: string;
+  patientId: string;
+  admissionReason: string;
+  admissionId: string;
+}> {
   await loginApi(request, receptionCreds);
   const runId = process.env.E2E_RUN_ID || new Date().toISOString().slice(0, 10);
   const unique = Date.now();
@@ -115,8 +120,13 @@ async function seedPendingAdmissionRequest(
     }
   );
   expect(approveResponse.ok()).toBeTruthy();
+  const approvedRequest = (await approveResponse.json()) as {
+    admission_id?: string;
+  };
+  const admissionId = String(approvedRequest.admission_id || '');
+  expect(admissionId, 'Approved seeded request should contain admission_id.').not.toBe('');
 
-  return { patientName, patientId: patient.id as string, admissionReason };
+  return { patientName, patientId: patient.id as string, admissionReason, admissionId };
 }
 
 test.describe('Admin admissions ward workflow', () => {
@@ -196,6 +206,12 @@ test.describe('Admin admissions ward workflow', () => {
     const targetApproved = approvedRequests.find(
       (item) => String(item.reason || '') === seeded.admissionReason
     );
+    expect(
+      targetApproved,
+      'Seeded admission request should be present in approved queue.'
+    ).toBeDefined();
+    const targetAdmissionId = String(targetApproved?.admission_id || '');
+    expect(targetAdmissionId, 'Seeded request should include active admission id.').not.toBe('');
     const bedBoardResponse = await page.request.get(`${apiBase}/v1/bed-board`);
     expect(bedBoardResponse.ok()).toBeTruthy();
     const bedBoard = (await bedBoardResponse.json()) as Record<string, unknown>;
@@ -208,12 +224,14 @@ test.describe('Admin admissions ward workflow', () => {
             ? {
                 status: targetApproved.status,
                 admission_status: targetApproved.admission_status,
+                admission_id: targetApproved.admission_id,
                 can_assign_bed: targetApproved.can_assign_bed,
                 has_active_bed_assignment: targetApproved.has_active_bed_assignment,
                 action_blockers: targetApproved.action_blockers,
                 active_visit_id: targetApproved.active_visit_id,
               }
             : null,
+          seeded_admission_id: seeded.admissionId,
           bed_board_summary: (bedBoard.summary as Record<string, unknown>) || null,
         },
         null,
@@ -221,19 +239,11 @@ test.describe('Admin admissions ward workflow', () => {
       )
     );
 
-    const approvedRowForPatient = page
+    const approvedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Assign Bed' }) })
       .first();
-    const approvedRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({
-        has: page.getByRole('button', { name: 'Assign Bed' }),
-      })
-      .first();
-    const approvedRow =
-      (await approvedRowForPatient.count()) > 0 ? approvedRowForPatient : approvedRowFallback;
     await expect(approvedRow).toBeVisible({ timeout: 30_000 });
     const assignBedButton = approvedRow.getByRole('button', { name: 'Assign Bed' });
     await expect(assignBedButton).toBeEnabled({ timeout: 30_000 });
@@ -256,7 +266,18 @@ test.describe('Admin admissions ward workflow', () => {
         name: new RegExp(`Bed ${escapeRegex(firstBedLabel)}`),
       })
       .click();
+    const assignResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/v1/beds/assign')
+    );
     await assignModal.getByRole('button', { name: 'Assign Bed' }).click();
+    const assignResponse = await assignResponsePromise;
+    expect(assignResponse.ok()).toBeTruthy();
+    const assignPayload = assignResponse.request().postDataJSON() as {
+      admission_id?: string;
+    };
+    expect(assignPayload.admission_id).toBe(seeded.admissionId);
     await expect(page.getByText('Bed assigned successfully.').first()).toBeVisible();
 
     await page
@@ -274,74 +295,93 @@ test.describe('Admin admissions ward workflow', () => {
     await expect(page.getByText('Bed Timeline').first()).toBeVisible();
     await page.getByRole('button', { name: 'Close', exact: true }).click();
 
-    const activeBedRowForPatient = page
+    const activeBedRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
       .first();
-    const activeBedRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ has: page.getByRole('button', { name: 'Release Bed (Keep Active)' }) })
-      .first();
-    const activeBedRow =
-      (await activeBedRowForPatient.count()) > 0 ? activeBedRowForPatient : activeBedRowFallback;
-    await expect(activeBedRow).toBeVisible();
+    await expect(activeBedRow).toBeVisible({ timeout: 30_000 });
+    await expect(activeBedRow).toContainText(firstBedLabel);
     await activeBedRow.getByRole('button', { name: 'Release Bed (Keep Active)' }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Release bed (keep admission active)' })
-    ).toBeVisible();
-    await page
+    const releaseHeading = page.getByRole('heading', {
+      name: 'Release bed (keep admission active)',
+    });
+    await expect(releaseHeading).toBeVisible();
+    const releaseModal = page
+      .locator('div.fixed.inset-0.z-50')
+      .filter({ has: releaseHeading })
+      .last();
+    await releaseModal
       .getByPlaceholder('Patient moved, temporary discharge, cleaning...')
       .fill('Temporary bed release');
-    await page
+    await releaseModal
       .locator(
         'label:has-text("I confirm this patient should no longer hold the current bed.") input[type="checkbox"]'
       )
       .check();
-    await page.getByRole('button', { name: 'Release Bed (Keep Active)' }).last().click();
-    await expect(page.getByText(/Bed released for/).first()).toBeVisible();
+    const releaseSubmitButton = releaseModal.getByRole('button', {
+      name: 'Release Bed (Keep Active)',
+    });
+    await expect(releaseSubmitButton).toBeEnabled();
+    const releaseResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes(`/v1/admissions/${seeded.admissionId}/bed/release`)
+    );
+    await releaseSubmitButton.click();
+    const releaseResponse = await releaseResponsePromise;
+    expect(releaseResponse.ok()).toBeTruthy();
+    await expect(releaseHeading).toBeHidden({ timeout: 15_000 });
 
-    const postReleaseRowForPatient = page
+    const postReleaseRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
       .first();
-    const postReleaseRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ has: page.getByRole('button', { name: 'Discharge Admission' }) })
-      .first();
-    const postReleaseRow =
-      (await postReleaseRowForPatient.count()) > 0
-        ? postReleaseRowForPatient
-        : postReleaseRowFallback;
-    await expect(postReleaseRow).toBeVisible();
-    await postReleaseRow.getByRole('button', { name: 'Discharge Admission' }).click();
+    await expect(postReleaseRow).toBeVisible({ timeout: 30_000 });
+    await expect(postReleaseRow.getByRole('button', { name: 'Assign Bed' })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
-      page.getByRole('heading', { name: 'Discharge active admission' })
-    ).toBeVisible();
-    await page
+      postReleaseRow.getByRole('button', { name: 'Release Bed (Keep Active)' })
+    ).toHaveCount(0);
+    await postReleaseRow.getByRole('button', { name: 'Discharge Admission' }).click();
+    const dischargeHeading = page.getByRole('heading', {
+      name: 'Discharge active admission',
+    });
+    await expect(dischargeHeading).toBeVisible();
+    const dischargeModal = page
+      .locator('div.fixed.inset-0.z-50')
+      .filter({ has: dischargeHeading })
+      .last();
+    await dischargeModal
       .getByPlaceholder('Clinical/operational discharge reason...')
       .fill('Discharge after workflow completion');
-    await page
+    await dischargeModal
       .locator(
         'label:has-text("I confirm this admission should be closed now.") input[type="checkbox"]'
       )
       .check();
-    await page.getByRole('button', { name: 'Discharge Admission' }).last().click();
-    await expect(page.getByText(/Admission discharged for/).first()).toBeVisible();
+    const dischargeSubmitButton = dischargeModal.getByRole('button', {
+      name: 'Discharge Admission',
+    });
+    await expect(dischargeSubmitButton).toBeEnabled();
+    const dischargeResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes(`/v1/admissions/${seeded.admissionId}/discharge`)
+    );
+    await dischargeSubmitButton.click();
+    const dischargeResponse = await dischargeResponsePromise;
+    expect(dischargeResponse.ok()).toBeTruthy();
+    await expect(dischargeHeading).toBeHidden({ timeout: 15_000 });
 
-    const readOnlyRowForPatient = page
+    const readOnlyRow = page
       .locator('div.rounded-lg.border.border-slate-200')
       .filter({ hasText: seeded.admissionReason })
       .filter({ hasText: /read-only/i })
       .first();
-    const readOnlyRowFallback = page
-      .locator('div.rounded-lg.border.border-slate-200')
-      .filter({ hasText: /read-only/i })
-      .first();
-    const readOnlyRow =
-      (await readOnlyRowForPatient.count()) > 0 ? readOnlyRowForPatient : readOnlyRowFallback;
-    await expect(readOnlyRow).toBeVisible();
+    await expect(readOnlyRow).toBeVisible({ timeout: 30_000 });
     await expect(readOnlyRow.getByRole('button', { name: 'Assign Bed' })).toHaveCount(0);
     await expect(readOnlyRow.getByRole('button', { name: 'Discharge Admission' })).toHaveCount(
       0

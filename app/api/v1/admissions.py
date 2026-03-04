@@ -13,6 +13,7 @@ from app.core.guards.admission_guards import (
 from app.schemas.admission import (
     AdmissionCreateRequest,
     AdmissionCancelRequest,
+    AdmissionBedReleaseRequest,
     AdmissionDischargeRequest,
     AdmissionResponse,
     AdmissionRequestCreateRequest,
@@ -180,6 +181,24 @@ def cancel_admission(
 ):
     service = AdmissionService(db)
     return service.cancel_admission(
+        admission_id=admission_id,
+        actor=user,
+        reason=payload.reason,
+    )
+
+
+@router.post(
+    "/{admission_id}/bed/release",
+    response_model=AdmissionResponse,
+)
+def release_admission_bed(
+    admission_id: UUID,
+    payload: AdmissionBedReleaseRequest,
+    db=Depends(get_db),
+    user=Depends(require_admission_role),
+):
+    service = AdmissionService(db)
+    return service.release_admission_bed(
         admission_id=admission_id,
         actor=user,
         reason=payload.reason,

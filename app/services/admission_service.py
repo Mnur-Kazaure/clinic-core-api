@@ -239,3 +239,54 @@ class AdmissionService:
         self.db.commit()
         self.db.refresh(admission)
         return admission
+
+    def release_admission_bed(
+        self,
+        *,
+        admission_id: UUID,
+        actor,
+        reason: str,
+    ) -> Admission:
+        admission = (
+            self.db.query(Admission)
+            .filter(Admission.id == admission_id)
+            .first()
+        )
+        if not admission:
+            raise HTTPException(status_code=404, detail="Admission not found")
+        if admission.clinic_id != actor.clinic_id:
+            raise HTTPException(status_code=403, detail="Cross-clinic access denied")
+        if admission.status != AdmissionStatus.ACTIVE:
+            raise HTTPException(status_code=409, detail="Admission not active")
+
+        active_assignment = (
+            self.db.query(BedAssignment)
+            .filter(
+                BedAssignment.admission_id == admission.id,
+                BedAssignment.released_at.is_(None),
+            )
+            .first()
+        )
+        if active_assignment is None:
+            raise HTTPException(status_code=409, detail="No active bed assignment")
+
+        active_assignment.released_at = datetime.now(timezone.utc)
+
+        self.db.commit()
+        self.db.refresh(admission)
+
+        self.event_service.emit(
+            event_type="BED_RELEASED",
+            actor_id=actor.id,
+            actor_role=actor.role,
+            clinic_id=admission.clinic_id,
+            patient_id=admission.patient_id,
+            emitter="bed",
+            payload={
+                "admission_id": str(admission.id),
+                "bed_id": str(active_assignment.bed_id),
+                "released_at": active_assignment.released_at.isoformat(),
+                "reason": reason.strip(),
+            },
+        )
+        return admission

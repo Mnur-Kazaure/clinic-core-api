@@ -37,6 +37,35 @@ class AccessLogService:
             commit=True,
         )
 
+    def log_operation(
+        self,
+        *,
+        actor,
+        clinic_id,
+        patient_id=None,
+        purpose_of_use: str | PurposeOfUse = PurposeOfUse.OPERATIONS,
+        justification: str,
+        resource: str,
+        action: str = "WRITE",
+        session_id: str | None = None,
+        device_id: str | None = None,
+        extra_payload: dict | None = None,
+    ) -> AccessLog:
+        return self._log(
+            actor=actor,
+            clinic_id=clinic_id,
+            patient_id=patient_id,
+            action=action,
+            purpose_of_use=purpose_of_use,
+            justification=justification,
+            resource=resource,
+            break_glass=False,
+            session_id=session_id,
+            device_id=device_id,
+            extra_payload=extra_payload,
+            commit=True,
+        )
+
     def log_chart_read(
         self,
         *,

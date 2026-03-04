@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.admission import Admission
@@ -10,8 +11,19 @@ from app.models.admission_request import AdmissionRequest
 from app.models.bed import Bed
 from app.models.bed_assignment import BedAssignment
 from app.models.patient import Patient
-from app.shared.enums import AdmissionRequestStatus, AdmissionStatus, AdmissionType, UserRole
+from app.models.ward import Ward
+from app.shared.enums import (
+    AdmissionRequestStatus,
+    AdmissionStatus,
+    AdmissionType,
+    BedStatus,
+    UserRole,
+)
 from app.services.event_service import EventService
+
+
+def _enum_value(value):
+    return value.value if hasattr(value, "value") else value
 
 
 class AdmissionRequestService:
@@ -133,6 +145,36 @@ class AdmissionRequestService:
                 for row in active_beds
             }
 
+        available_bed_exists = False
+        if requests:
+            available_bed_exists = (
+                self.db.query(Bed.id)
+                .join(
+                    Ward,
+                    and_(
+                        Ward.id == Bed.ward_id,
+                        Ward.clinic_id == Bed.clinic_id,
+                    ),
+                )
+                .outerjoin(
+                    BedAssignment,
+                    and_(
+                        BedAssignment.bed_id == Bed.id,
+                        BedAssignment.clinic_id == Bed.clinic_id,
+                        BedAssignment.released_at.is_(None),
+                    ),
+                )
+                .filter(
+                    Bed.clinic_id == actor.clinic_id,
+                    Bed.active.is_(True),
+                    Bed.status == BedStatus.AVAILABLE,
+                    Ward.active.is_(True),
+                    BedAssignment.id.is_(None),
+                )
+                .first()
+                is not None
+            )
+
         for request in requests:
             bed_state = (
                 active_bed_map.get(request.admission_id)
@@ -148,6 +190,40 @@ class AdmissionRequestService:
             setattr(request, "has_active_bed_assignment", bed_state is not None)
             setattr(request, "current_bed_id", bed_state[0] if bed_state else None)
             setattr(request, "current_bed_label", bed_state[1] if bed_state else None)
+            status_value = _enum_value(request.status)
+            admission_status_value = _enum_value(admission_status)
+            is_approved_active_admission = (
+                status_value == AdmissionRequestStatus.APPROVED.value
+                and request.admission_id is not None
+                and admission_status_value == AdmissionStatus.ACTIVE.value
+            )
+            has_active_bed = bed_state is not None
+            can_assign_bed = (
+                is_approved_active_admission
+                and not has_active_bed
+                and available_bed_exists
+            )
+            can_reassign_bed = (
+                is_approved_active_admission
+                and has_active_bed
+                and available_bed_exists
+            )
+            action_blockers: list[str] = []
+            if status_value == AdmissionRequestStatus.APPROVED.value:
+                if request.admission_id is None:
+                    action_blockers.append("ADMISSION_RECORD_UNAVAILABLE")
+                elif admission_status_value != AdmissionStatus.ACTIVE.value:
+                    action_blockers.append("ADMISSION_NOT_ACTIVE")
+                else:
+                    if not has_active_bed and not available_bed_exists:
+                        action_blockers.append("NO_AVAILABLE_BEDS_ASSIGN")
+                    if has_active_bed and not available_bed_exists:
+                        action_blockers.append("NO_AVAILABLE_BEDS_REASSIGN")
+
+            setattr(request, "can_assign_bed", can_assign_bed)
+            setattr(request, "can_reassign_bed", can_reassign_bed)
+            setattr(request, "can_reassign_owner", False)
+            setattr(request, "action_blockers", action_blockers)
 
         return requests
 

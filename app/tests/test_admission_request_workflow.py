@@ -134,6 +134,54 @@ def test_list_requests_includes_active_bed_state(db, clinic_id, doctor):
     assert target.current_bed_label == "A1"
 
 
+def test_list_requests_sets_assign_readiness_when_capacity_exists(db, clinic_id):
+    admin = _create_admin(db, clinic_id)
+    patient = _create_patient(db, clinic_id)
+    request_service = AdmissionRequestService(db)
+
+    request = request_service.create_request(
+        patient_id=patient.id,
+        admission_type=AdmissionType.ELECTIVE,
+        reason="Needs admission bed",
+        actor=admin,
+    )
+    approved_request, _ = request_service.approve_request(
+        request_id=request.id,
+        actor=admin,
+        decision_reason="Approved",
+    )
+
+    ward = Ward(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        name="Ready Ward",
+        ward_type=WardType.GENERAL,
+        active=True,
+    )
+    db.add(ward)
+    db.commit()
+
+    bed = Bed(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        ward_id=ward.id,
+        bed_label="RW-01",
+        status=BedStatus.AVAILABLE,
+        active=True,
+    )
+    db.add(bed)
+    db.commit()
+
+    approved = request_service.list_requests(
+        actor=admin,
+        status=AdmissionRequestStatus.APPROVED,
+    )
+    target = next(item for item in approved if item.id == approved_request.id)
+    assert target.can_assign_bed is True
+    assert target.can_reassign_bed is False
+    assert target.action_blockers == []
+
+
 def test_reject_request(db, clinic_id, doctor):
     admin = _create_admin(db, clinic_id)
     patient = _create_patient(db, clinic_id)
