@@ -6,28 +6,10 @@ on:
     branches:
       - main
       - develop
-    paths:
-      - ".github/workflows/playwright-anc-export.yml"
-      - "clinic-app/**"
-      - "app/**"
-      - "alembic/**"
-      - "scripts/seed_playwright_users.py"
-      - "requirements.txt"
-      - "pnpm-lock.yaml"
-      - "clinic-app/package.json"
   pull_request:
     branches:
       - main
       - develop
-    paths:
-      - ".github/workflows/playwright-anc-export.yml"
-      - "clinic-app/**"
-      - "app/**"
-      - "alembic/**"
-      - "scripts/seed_playwright_users.py"
-      - "requirements.txt"
-      - "pnpm-lock.yaml"
-      - "clinic-app/package.json"
   schedule:
     - cron: "30 2 * * *"
 
