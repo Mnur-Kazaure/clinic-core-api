@@ -1,0 +1,17 @@
+# CODEOWNERS baseline for two-engineer collaboration.
+
+# Default owner for all files
+* @Mnur-Kazaure
+
+# Backend
+/app/** @Mnur-Kazaure @saniabduljabbar619-create
+/alembic/** @Mnur-Kazaure @saniabduljabbar619-create
+/requirements.txt @Mnur-Kazaure
+
+# Frontend
+/clinic-app/** @Mnur-Kazaure @saniabduljabbar619-create
+/pnpm-lock.yaml @Mnur-Kazaure
+
+# CI, security, and repo controls
+/.github/** @Mnur-Kazaure
+/scripts/** @Mnur-Kazaure
