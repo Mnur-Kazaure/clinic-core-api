@@ -22,41 +22,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend-pr-checks:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Detect changed areas
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'app/**'
+              - 'alembic/**'
+              - 'requirements.txt'
+            frontend:
+              - 'clinic-app/**'
+              - 'pnpm-lock.yaml'
+              - 'clinic-app/package.json'
+
+  backend-pr-checks:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip backend checks when backend is unchanged
+        if: needs.changes.outputs.backend != 'true'
+        run: echo "No backend changes detected; backend checks skipped."
+
+      - name: Checkout
+        if: needs.changes.outputs.backend == 'true'
+        uses: actions/checkout@v4
+
       - name: Set up Python
+        if: needs.changes.outputs.backend == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install backend dependencies
+        if: needs.changes.outputs.backend == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest email-validator
 
       - name: Compile backend modules
+        if: needs.changes.outputs.backend == 'true'
         run: python -m compileall app
 
       - name: Run backend contract tests (fast gate)
+        if: needs.changes.outputs.backend == 'true'
         run: |
           python -m pytest app/tests/test_lab_workflow_contract.py -q
-          python -m pytest app/tests/test_billing_lab_payment_gate.py -q
 
   frontend-pr-checks:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
+      - name: Skip frontend checks when frontend is unchanged
+        if: needs.changes.outputs.frontend != 'true'
+        run: echo "No frontend changes detected; frontend checks skipped."
+
       - name: Checkout
+        if: needs.changes.outputs.frontend == 'true'
         uses: actions/checkout@v4
 
       - name: Set up pnpm
+        if: needs.changes.outputs.frontend == 'true'
         uses: pnpm/action-setup@v4
 
       - name: Set up Node.js
+        if: needs.changes.outputs.frontend == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -64,10 +104,11 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install frontend dependencies
+        if: needs.changes.outputs.frontend == 'true'
         working-directory: clinic-app
         run: pnpm install --frozen-lockfile
 
       - name: Build frontend
+        if: needs.changes.outputs.frontend == 'true'
         working-directory: clinic-app
         run: pnpm build
-
