@@ -15,6 +15,44 @@ interface DoctorQueueProps {
   refreshToken?: number;
 }
 
+type DoctorQueueFilter =
+  | VisitStatus.REGISTERED
+  | VisitStatus.IN_CONSULTATION
+  | VisitStatus.LAB_REQUESTED
+  | 'EMERGENCY';
+
+type DoctorQueueStatusOption = {
+  value: DoctorQueueFilter;
+  label: string;
+  color: string;
+};
+
+const STATUS_OPTIONS: DoctorQueueStatusOption[] = [
+  {
+    value: VisitStatus.REGISTERED,
+    label: 'Registered',
+    color: 'bg-blue-100 text-blue-800',
+  },
+  {
+    value: VisitStatus.IN_CONSULTATION,
+    label: 'In Consultation',
+    color: 'bg-purple-100 text-purple-800',
+  },
+  {
+    value: 'EMERGENCY',
+    label: 'Emergency',
+    color: 'bg-red-100 text-red-800',
+  },
+  {
+    value: VisitStatus.LAB_REQUESTED,
+    label: 'Lab Requested',
+    color: 'bg-indigo-100 text-indigo-800',
+  },
+];
+
+// Keep doctor queue updates near real-time for newly assigned patients.
+const QUEUE_POLL_INTERVAL_MS = 10_000;
+
 export function DoctorQueue({
   onStartConsultation,
   onViewVisit,
@@ -27,31 +65,8 @@ export function DoctorQueue({
   const [startError, setStartError] = useState<string | null>(null);
   const [startingVisitId, setStartingVisitId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] =
-    useState<string>('IN_CONSULTATION');
+    useState<DoctorQueueFilter>(VisitStatus.REGISTERED);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
-  const statusOptions = [
-    {
-      value: 'IN_CONSULTATION',
-      label: 'In Consultation',
-      color: 'bg-purple-100 text-purple-800',
-    },
-    {
-      value: 'EMERGENCY',
-      label: 'Emergency',
-      color: 'bg-red-100 text-red-800',
-    },
-    {
-      value: 'TRIAGED',
-      label: 'Triaged (Ready)',
-      color: 'bg-yellow-100 text-yellow-800',
-    },
-    {
-      value: 'LAB_REQUESTED',
-      label: 'Lab Requested',
-      color: 'bg-indigo-100 text-indigo-800',
-    },
-  ];
 
   const loadQueue = useCallback(async () => {
     try {
@@ -79,7 +94,7 @@ export function DoctorQueue({
     loadQueue();
     intervalId = setInterval(() => {
       loadQueue();
-    }, 30000);
+    }, QUEUE_POLL_INTERVAL_MS);
 
     return () => {
       if (intervalId) {
@@ -94,7 +109,10 @@ export function DoctorQueue({
       setStartingVisitId(visit.id);
 
       let visitForConsultation = visit;
-      if (visit.status === VisitStatus.TRIAGED) {
+      if (
+        visit.status === VisitStatus.TRIAGED ||
+        visit.status === VisitStatus.REGISTERED
+      ) {
         visitForConsultation = await visitService.transitionVisit(visit.id, {
           to_status: VisitStatus.IN_CONSULTATION,
           expected_version: visit.version,
@@ -187,11 +205,13 @@ export function DoctorQueue({
             </label>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) =>
+                setStatusFilter(e.target.value as DoctorQueueFilter)
+              }
               className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Filter by visit status"
             >
-              {statusOptions.map((option) => (
+              {STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -245,7 +265,7 @@ export function DoctorQueue({
           <div className="text-center py-8">
             <p className="text-gray-600 font-medium">
               No patients in your{' '}
-              {statusOptions
+              {STATUS_OPTIONS
                 .find((o) => o.value === statusFilter)
                 ?.label?.toLowerCase()}{' '}
               queue
@@ -361,7 +381,8 @@ export function DoctorQueue({
                         </Button>
                       )}
 
-                      {visit.status === 'TRIAGED' && (
+                      {(visit.status === VisitStatus.TRIAGED ||
+                        visit.status === VisitStatus.REGISTERED) && (
                         <Button
                           size="sm"
                           variant="primary"
@@ -402,10 +423,12 @@ export function DoctorQueue({
               Queue Summary
             </h4>
             <div className="flex flex-wrap gap-3">
-              {statusOptions
+              {STATUS_OPTIONS
                 .map((opt) => {
-                  const count = visits.filter((v) => v.status === opt.value)
-                    .length;
+                  const count =
+                    opt.value === 'EMERGENCY'
+                      ? visits.filter((v) => v.intake_emergency_flag).length
+                      : visits.filter((v) => v.status === opt.value).length;
                   if (count === 0) return null;
 
                   return (

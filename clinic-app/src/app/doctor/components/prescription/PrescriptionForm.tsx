@@ -1,6 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  pharmacyCatalogGovernanceService,
+  PharmacyActiveCatalogItem,
+} from '@/domains/pharmacy/services/pharmacyCatalogGovernanceService';
 import { prescriptionService } from '@/domains/prescription/services/prescriptionService';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
@@ -13,24 +17,6 @@ interface PrescriptionFormProps {
   onCancel?: () => void;
   compact?: boolean;
 }
-
-const COMMON_MEDICATIONS = [
-  { name: 'Amoxicillin', category: 'Antibiotic', commonDosage: '500mg' },
-  { name: 'Ibuprofen', category: 'NSAID', commonDosage: '400mg' },
-  { name: 'Paracetamol', category: 'Analgesic', commonDosage: '500mg' },
-  { name: 'Lisinopril', category: 'Antihypertensive', commonDosage: '10mg' },
-  { name: 'Metformin', category: 'Antidiabetic', commonDosage: '500mg' },
-  { name: 'Atorvastatin', category: 'Statin', commonDosage: '20mg' },
-  { name: 'Levothyroxine', category: 'Thyroid', commonDosage: '50mcg' },
-  { name: 'Sertraline', category: 'SSRI', commonDosage: '50mg' },
-  { name: 'Omeprazole', category: 'PPI', commonDosage: '20mg' },
-  { name: 'Salbutamol', category: 'Bronchodilator', commonDosage: '100mcg' },
-  { name: 'Prednisone', category: 'Corticosteroid', commonDosage: '5mg' },
-  { name: 'Warfarin', category: 'Anticoagulant', commonDosage: '5mg' },
-  { name: 'Furosemide', category: 'Diuretic', commonDosage: '40mg' },
-  { name: 'Metoprolol', category: 'Beta Blocker', commonDosage: '50mg' },
-  { name: 'Ciprofloxacin', category: 'Antibiotic', commonDosage: '500mg' },
-];
 
 const FREQUENCY_OPTIONS = [
   'Once daily',
@@ -68,8 +54,8 @@ export function PrescriptionForm({
   onCancel,
   compact = false,
 }: PrescriptionFormProps) {
-  const [drugName, setDrugName] = useState('');
-  const [customDrug, setCustomDrug] = useState('');
+  const [catalogItems, setCatalogItems] = useState<PharmacyActiveCatalogItem[]>([]);
+  const [selectedCatalogItemId, setSelectedCatalogItemId] = useState('');
   const [dosage, setDosage] = useState('');
   const [frequency, setFrequency] = useState('');
   const [duration, setDuration] = useState('');
@@ -78,11 +64,33 @@ export function PrescriptionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const selectedCatalogItem =
+    catalogItems.find((item) => item.id === selectedCatalogItemId) || null;
+
+  useEffect(() => {
+    let mounted = true;
+    void pharmacyCatalogGovernanceService
+      .listActiveCatalogItems()
+      .then((items) => {
+        if (mounted) {
+          setCatalogItems(items);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setError('Unable to load active pharmacy catalog items.');
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!drugName && !customDrug) {
-      setError('Please select or enter a medication name');
+    if (!selectedCatalogItemId) {
+      setError('Please select an active pharmacy catalog item');
       return;
     }
 
@@ -101,7 +109,7 @@ export function PrescriptionForm({
       return;
     }
 
-    const finalDrugName = drugName || customDrug;
+    const estimatedQuantity = Number(calculateQuantity() || 1);
 
     try {
       setIsSubmitting(true);
@@ -109,10 +117,13 @@ export function PrescriptionForm({
 
       const prescription = await prescriptionService.issuePrescription({
         consultation_id: consultationId,
-        drug_name: finalDrugName,
+        pharmacy_catalog_item_id: selectedCatalogItemId,
         dosage,
         frequency,
         duration,
+        quantity_prescribed: Number.isFinite(estimatedQuantity)
+          ? estimatedQuantity
+          : undefined,
         instructions: instructions || undefined,
       });
 
@@ -120,8 +131,7 @@ export function PrescriptionForm({
         onSuccess(prescription.id);
       }
 
-      setDrugName('');
-      setCustomDrug('');
+      setSelectedCatalogItemId('');
       setDosage('');
       setFrequency('');
       setDuration('');
@@ -146,15 +156,11 @@ export function PrescriptionForm({
     }
   };
 
-  const handleDrugSelect = (drug: string) => {
-    setDrugName(drug);
-    setCustomDrug('');
-  };
-
-  const handleCustomDrugChange = (value: string) => {
-    setCustomDrug(value);
-    if (value) {
-      setDrugName('');
+  const handleCatalogSelect = (itemId: string) => {
+    setSelectedCatalogItemId(itemId);
+    const item = catalogItems.find((row) => row.id === itemId) || null;
+    if (item && !dosage) {
+      setDosage(item.strength || item.display_name);
     }
   };
 
@@ -210,30 +216,22 @@ export function PrescriptionForm({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Medication
             </label>
-            <div className="space-y-2">
-              <select
-                value={drugName}
-                onChange={(e) => handleDrugSelect(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isSubmitting}
-              >
-                <option value="">Select common medication...</option>
-                {COMMON_MEDICATIONS.map((med) => (
-                  <option key={med.name} value={med.name}>
-                    {med.name} ({med.category}) - {med.commonDosage}
-                  </option>
-                ))}
-              </select>
-
-              <div className="text-center text-sm text-gray-500">OR</div>
-
-              <Input
-                value={customDrug}
-                onChange={(e) => handleCustomDrugChange(e.target.value)}
-                placeholder="Enter custom medication name..."
-                disabled={isSubmitting}
-              />
-            </div>
+            <select
+              value={selectedCatalogItemId}
+              onChange={(e) => handleCatalogSelect(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isSubmitting}
+            >
+              <option value="">Select approved pharmacy catalog item...</option>
+              {catalogItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.display_name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-gray-500">
+              Only CMD-approved and Accounts-priced items are available for prescribing.
+            </p>
           </div>
 
           <Input
@@ -242,7 +240,7 @@ export function PrescriptionForm({
             onChange={(e) => setDosage(e.target.value)}
             placeholder="e.g., 500mg, 10mg, 1 tablet"
             disabled={isSubmitting}
-            error={!dosage && drugName ? 'Dosage is required' : undefined}
+            error={!dosage && selectedCatalogItemId ? 'Dosage is required' : undefined}
           />
 
           <div>
@@ -311,7 +309,7 @@ export function PrescriptionForm({
               variant="primary"
               isLoading={isSubmitting}
               disabled={
-                isSubmitting || !drugName || !dosage || !frequency || !duration
+                isSubmitting || !selectedCatalogItemId || !dosage || !frequency || !duration
               }
               className="flex-1"
             >
@@ -386,18 +384,18 @@ export function PrescriptionForm({
 
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Common Medications (Click to select)
+                    Approved Pharmacy Catalog Items
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {COMMON_MEDICATIONS.map((med) => (
+                    {catalogItems.map((item) => (
                       <button
-                        key={med.name}
+                        key={item.id}
                         type="button"
-                        onClick={() => handleDrugSelect(med.name)}
+                        onClick={() => handleCatalogSelect(item.id)}
                         className={`
                           text-left p-4 rounded-md border text-sm transition-colors
                           ${
-                            drugName === med.name
+                            selectedCatalogItemId === item.id
                               ? 'bg-blue-50 border-blue-300 text-blue-700'
                               : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                           }
@@ -405,32 +403,17 @@ export function PrescriptionForm({
                         `}
                         disabled={isSubmitting}
                       >
-                        <div className="font-medium">{med.name}</div>
+                        <div className="font-medium">{item.display_name}</div>
                         <div className="text-gray-600 text-xs mt-1">
-                          {med.category} • {med.commonDosage}
+                          {item.classification} • Charge {item.currency} {(item.unit_price_minor / 100).toFixed(2)}
                         </div>
                       </button>
                     ))}
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Custom Medication Name
-                  </label>
-                  <Input
-                    value={customDrug}
-                    onChange={(e) => handleCustomDrugChange(e.target.value)}
-                    placeholder="Enter medication name if not in list above..."
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Selected medication:{' '}
-                    <span className="font-medium">
-                      {drugName || customDrug || 'None'}
-                    </span>
-                  </p>
-                </div>
+                <p className="text-xs text-gray-500">
+                  Prescribing is restricted to governed catalog items only.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -443,7 +426,7 @@ export function PrescriptionForm({
                     onChange={(e) => setDosage(e.target.value)}
                     placeholder="e.g., 500mg, 10mg, 1 tablet"
                     disabled={isSubmitting}
-                    error={!dosage && drugName ? 'Required' : undefined}
+                    error={!dosage && selectedCatalogItemId ? 'Required' : undefined}
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Strength and form (mg, mcg, tablets, ml, etc.)
@@ -537,7 +520,7 @@ export function PrescriptionForm({
                   <div className="pb-3 border-b">
                     <span className="text-sm text-gray-600">Medication:</span>
                     <p className="font-bold text-lg text-gray-900">
-                      {drugName || customDrug || '________________'}
+                      {selectedCatalogItem?.display_name || '________________'}
                     </p>
                   </div>
 
@@ -617,7 +600,7 @@ export function PrescriptionForm({
                 size="lg"
                 isLoading={isSubmitting}
                 disabled={
-                  isSubmitting || !drugName || !dosage || !frequency || !duration
+                  isSubmitting || !selectedCatalogItemId || !dosage || !frequency || !duration
                 }
               >
                 Issue Prescription
@@ -641,8 +624,7 @@ export function PrescriptionForm({
               variant="secondary"
               size="lg"
               onClick={() => {
-                setDrugName('');
-                setCustomDrug('');
+                setSelectedCatalogItemId('');
                 setDosage('');
                 setFrequency('');
                 setDuration('');

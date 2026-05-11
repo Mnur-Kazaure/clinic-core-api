@@ -1,16 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PatientSearch } from '@/app/reception/components/patient/PatientSearch';
 import { PatientRegistrationForm } from '@/app/reception/components/patient/PatientRegistrationForm';
 import { DoctorSelection } from '@/app/reception/components/visit/DoctorSelection';
-import { visitService } from '@/domains/visit/services/visitService';
+import {
+  ServiceLineNode,
+  visitService,
+} from '@/domains/visit/services/visitService';
 import { PatientResponse } from '@/domains/patient/services/patientService';
 import { Doctor } from '@/domains/user/services/userService';
 import { VisitResponse } from '@/shared/types';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
-import { PurposeOfUse, VisitServiceLine, UserRole } from '@/shared/enums';
+import { PurposeOfUse, UserRole } from '@/shared/enums';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 
 interface StartVisitModalProps {
@@ -18,6 +21,7 @@ interface StartVisitModalProps {
   onClose: () => void;
   onSuccess?: (visitId: string) => void;
   onContinueVisit?: (visitId: string) => void;
+  currentDepartmentId?: string | null;
 }
 
 type VisitStep = 'SELECT_PATIENT' | 'ASSIGN_DOCTOR' | 'CONFIRM';
@@ -27,15 +31,19 @@ export function StartVisitModal({
   onClose,
   onSuccess,
   onContinueVisit,
+  currentDepartmentId = null,
 }: StartVisitModalProps) {
   const [step, setStep] = useState<VisitStep>('SELECT_PATIENT');
   const [selectedPatient, setSelectedPatient] =
     useState<PatientResponse | null>(null);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
-  const [serviceLine, setServiceLine] = useState<VisitServiceLine>(
-    VisitServiceLine.OPD
-  );
+  const [serviceLineTree, setServiceLineTree] = useState<ServiceLineNode[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [selectedTypeId, setSelectedTypeId] = useState<string>('');
+  const [serviceLineLoading, setServiceLineLoading] = useState(false);
+  const [serviceLineError, setServiceLineError] = useState<string | null>(null);
+  const [includeAllDepartments, setIncludeAllDepartments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRegistrationForm, setShowRegistrationForm] = useState(false);
@@ -43,12 +51,93 @@ export function StartVisitModal({
   const [checkingActive, setCheckingActive] = useState(false);
   const [activeVisitError, setActiveVisitError] = useState<string | null>(null);
 
+  const selectedCategory = useMemo(
+    () => serviceLineTree.find((line) => line.id === selectedCategoryId) || null,
+    [serviceLineTree, selectedCategoryId]
+  );
+
+  const selectedLeaf = useMemo(() => {
+    if (!selectedCategory) return null;
+    if (!selectedCategory.children?.length) return selectedCategory;
+    return (
+      selectedCategory.children.find((child) => child.id === selectedTypeId) ||
+      null
+    );
+  }, [selectedCategory, selectedTypeId]);
+
+  const requiresDoctor = useMemo(() => {
+    if (!selectedLeaf) return false;
+    return Boolean(selectedLeaf.requires_doctor || selectedCategory?.requires_doctor);
+  }, [selectedLeaf, selectedCategory]);
+
+  const assignedRole = useMemo(() => {
+    const leafName = selectedLeaf?.name.toLowerCase() || '';
+    if (leafName === 'anc') return UserRole.CHEW;
+    if (leafName === 'maternity') return UserRole.MIDWIFE;
+    return UserRole.DOCTOR;
+  }, [selectedLeaf]);
+
   const assignedRoleLabel =
-    serviceLine === VisitServiceLine.ANC
+    assignedRole === UserRole.CHEW
       ? 'CHEW'
-      : serviceLine === VisitServiceLine.MATERNITY
+      : assignedRole === UserRole.MIDWIFE
       ? 'Midwife'
       : 'Doctor';
+
+  const applyServiceCategory = (categoryId: string, available: ServiceLineNode[]) => {
+    const category = available.find((line) => line.id === categoryId) || null;
+    setSelectedCategoryId(categoryId);
+    if (!category) {
+      setSelectedTypeId('');
+      return;
+    }
+
+    if (!category.children?.length) {
+      setSelectedTypeId('');
+      return;
+    }
+
+    const defaultChild =
+      category.children.find((child) => child.id === category.default_child_id) ||
+      category.children[0] ||
+      null;
+    setSelectedTypeId(defaultChild?.id || '');
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    async function loadServiceLines() {
+      try {
+        setServiceLineLoading(true);
+        setServiceLineError(null);
+        const lines = await visitService.getReceptionServiceLines(currentDepartmentId);
+        if (cancelled) return;
+        setServiceLineTree(lines);
+        if (lines.length > 0) {
+          const firstId = lines[0].id;
+          applyServiceCategory(firstId, lines);
+        } else {
+          setSelectedCategoryId('');
+          setSelectedTypeId('');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load service lines:', err);
+        setServiceLineError('Unable to load service lines for this department.');
+      } finally {
+        if (!cancelled) {
+          setServiceLineLoading(false);
+        }
+      }
+    }
+
+    loadServiceLines();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, currentDepartmentId]);
 
   const handlePatientSelect = async (patient: PatientResponse | null) => {
     setSelectedPatient(patient);
@@ -69,7 +158,7 @@ export function StartVisitModal({
       }
       setStep('ASSIGN_DOCTOR');
       setError(null);
-    } catch (err) {
+    } catch {
       setActiveVisitError(
         'Unable to verify active visits. You can still proceed.'
       );
@@ -81,14 +170,22 @@ export function StartVisitModal({
 
   const handleDoctorSelect = (doctorId: string) => {
     setSelectedDoctorId(doctorId);
-    if (doctorId) {
+    if (!requiresDoctor || doctorId) {
       setStep('CONFIRM');
     }
   };
 
   const handleSubmit = async () => {
-    if (!selectedPatient || !selectedDoctorId) {
-      setError('Please select both patient and doctor');
+    if (!selectedPatient) {
+      setError('Please select a patient');
+      return;
+    }
+    if (!selectedLeaf) {
+      setError('Please select a service line');
+      return;
+    }
+    if (requiresDoctor && !selectedDoctorId) {
+      setError('Please assign a clinician for this service line');
       return;
     }
 
@@ -98,8 +195,8 @@ export function StartVisitModal({
 
       const visit = await visitService.startVisit({
         patient_id: selectedPatient.id,
-        assigned_doctor_id: selectedDoctorId,
-        service_line: serviceLine,
+        ...(selectedDoctorId ? { assigned_doctor_id: selectedDoctorId } : {}),
+        service_line_id: selectedLeaf.id,
       });
 
       if (onSuccess) {
@@ -108,18 +205,23 @@ export function StartVisitModal({
 
       resetForm();
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Visit creation failed:', err);
+      const response =
+        typeof err === 'object' && err && 'response' in err
+          ? (err as { response?: { status?: number; data?: { detail?: string } } })
+              .response
+          : undefined;
 
-      if (err.response?.status === 409) {
+      if (response?.status === 409) {
         setError(
           'This patient already has an active visit. Please complete or cancel it first.'
         );
-      } else if (err.response?.status === 403) {
+      } else if (response?.status === 403) {
         setError('You do not have permission to start visits.');
       } else {
         setError(
-          err.response?.data?.detail ||
+          response?.data?.detail ||
             'Failed to start visit. Please try again.'
         );
       }
@@ -133,7 +235,12 @@ export function StartVisitModal({
     setSelectedPatient(null);
     setSelectedDoctorId('');
     setSelectedDoctor(null);
-    setServiceLine(VisitServiceLine.OPD);
+    setServiceLineTree([]);
+    setSelectedCategoryId('');
+    setSelectedTypeId('');
+    setServiceLineLoading(false);
+    setServiceLineError(null);
+    setIncludeAllDepartments(false);
     setError(null);
     setShowRegistrationForm(false);
     setActiveVisit(null);
@@ -283,7 +390,7 @@ export function StartVisitModal({
                     <div className="border-t pt-4">
                       <div className="text-center">
                         <p className="text-gray-600 mb-3">
-                          Can't find the patient?
+                          Can&apos;t find the patient?
                         </p>
                         <Button
                           type="button"
@@ -379,46 +486,100 @@ export function StartVisitModal({
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Service Line
+                      Service Category
                     </label>
                     <select
-                      value={serviceLine}
+                      value={selectedCategoryId}
                       onChange={(e) => {
-                        setServiceLine(e.target.value as VisitServiceLine);
+                        applyServiceCategory(e.target.value, serviceLineTree);
                         setSelectedDoctorId('');
                         setSelectedDoctor(null);
                       }}
+                      disabled={serviceLineLoading || serviceLineTree.length === 0}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value={VisitServiceLine.OPD}>Consultation (OPD)</option>
-                      <option value={VisitServiceLine.ANC}>ANC</option>
-                      <option value={VisitServiceLine.MATERNITY}>Maternity</option>
+                      {serviceLineTree.length === 0 ? (
+                        <option value="">No service categories available</option>
+                      ) : (
+                        serviceLineTree.map((line) => (
+                          <option key={line.id} value={line.id}>
+                            {line.name}
+                          </option>
+                        ))
+                      )}
                     </select>
+                    {serviceLineLoading && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Loading service lines...
+                      </p>
+                    )}
+                    {serviceLineError && (
+                      <p className="mt-1 text-xs text-red-600">
+                        {serviceLineError}
+                      </p>
+                    )}
                     <p className="mt-1 text-xs text-gray-500">
-                      Choose where this visit should be routed.
+                      Choose the primary routing category.
                     </p>
                   </div>
 
-                  <DoctorSelection
-                    value={selectedDoctorId}
-                    onChange={handleDoctorSelect}
-                    onSelectDoctor={setSelectedDoctor}
-                    disabled={isSubmitting}
-                    role={
-                      serviceLine === VisitServiceLine.ANC
-                        ? UserRole.CHEW
-                        : serviceLine === VisitServiceLine.MATERNITY
-                        ? UserRole.MIDWIFE
-                        : UserRole.DOCTOR
-                    }
-                    label={
-                      serviceLine === VisitServiceLine.ANC
-                        ? 'Assign CHEW *'
-                        : serviceLine === VisitServiceLine.MATERNITY
-                        ? 'Assign Midwife *'
-                        : 'Assign Doctor *'
-                    }
-                  />
+                  {selectedCategory && selectedCategory.children.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Service Type
+                      </label>
+                      <select
+                        value={selectedTypeId}
+                        onChange={(event) => {
+                          setSelectedTypeId(event.target.value);
+                          setSelectedDoctorId('');
+                          setSelectedDoctor(null);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {selectedCategory.children.map((child) => (
+                          <option key={child.id} value={child.id}>
+                            {child.name}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedCategory.default_child_id && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Default service type auto-selected for faster registration.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedLeaf && requiresDoctor ? (
+                    <div className="space-y-3">
+                      <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={includeAllDepartments}
+                          onChange={(event) =>
+                            setIncludeAllDepartments(event.target.checked)
+                          }
+                        />
+                        Show clinicians from all departments
+                      </label>
+                      <DoctorSelection
+                        value={selectedDoctorId}
+                        onChange={handleDoctorSelect}
+                        onSelectDoctor={setSelectedDoctor}
+                        disabled={isSubmitting}
+                        role={assignedRole}
+                        serviceLineId={selectedLeaf.id}
+                        includeAllDepartments={includeAllDepartments}
+                        departmentId={currentDepartmentId}
+                        label={`Assign ${assignedRoleLabel} *`}
+                      />
+                    </div>
+                  ) : selectedLeaf ? (
+                    <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+                      Doctor assignment is optional for this service line.
+                    </div>
+                  ) : null}
                 </div>
               </Card>
 
@@ -435,9 +596,13 @@ export function StartVisitModal({
                   type="button"
                   variant="primary"
                   onClick={() => {
-                    if (selectedDoctorId) setStep('CONFIRM');
+                    if (selectedLeaf && (!requiresDoctor || selectedDoctorId)) {
+                      setStep('CONFIRM');
+                    }
                   }}
-                  disabled={!selectedDoctorId || isSubmitting}
+                  disabled={
+                    !selectedLeaf || (requiresDoctor && !selectedDoctorId) || isSubmitting
+                  }
                 >
                   Next: Confirm
                 </Button>
@@ -499,21 +664,38 @@ export function StartVisitModal({
 
                   <div className="rounded-md border border-slate-200 bg-white p-4">
                     <h3 className="text-sm font-semibold text-slate-900 mb-3">
+                      Service Routing
+                    </h3>
+                    <div className="space-y-1 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-900">
+                        {selectedCategory?.name || 'Not selected'}
+                        {selectedLeaf && selectedLeaf.id !== selectedCategory?.id
+                          ? ` → ${selectedLeaf.name}`
+                          : ''}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Service line ID: {selectedLeaf?.id?.substring(0, 8) || '—'}...
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-slate-200 bg-white p-4">
+                    <h3 className="text-sm font-semibold text-slate-900 mb-3">
                       Assigned {assignedRoleLabel}
                     </h3>
                       <div className="flex items-center">
                         <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
                           <span className="text-blue-700 font-semibold">
-                            {serviceLine === VisitServiceLine.OPD
+                            {assignedRole === UserRole.DOCTOR
                               ? 'DR'
-                              : serviceLine === VisitServiceLine.ANC
+                              : assignedRole === UserRole.CHEW
                               ? 'CH'
                               : 'MW'}
                           </span>
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-slate-900">
-                            {selectedDoctor?.full_name || 'Doctor selected'}
+                            {selectedDoctor?.full_name || 'Not assigned'}
                           </p>
                           {selectedDoctor?.email && (
                             <p className="text-xs text-slate-500">
@@ -538,9 +720,11 @@ export function StartVisitModal({
                               Status: {selectedDoctor.availability_status}
                             </p>
                           )}
-                          <p className="text-xs text-slate-500">
-                            ID: {selectedDoctorId.substring(0, 8)}...
-                          </p>
+                          {selectedDoctorId && (
+                            <p className="text-xs text-slate-500">
+                              ID: {selectedDoctorId.substring(0, 8)}...
+                            </p>
+                          )}
                         </div>
                       </div>
                   </div>

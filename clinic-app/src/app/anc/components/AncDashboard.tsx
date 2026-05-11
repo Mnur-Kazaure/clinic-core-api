@@ -20,8 +20,15 @@ import { userService, Doctor } from '@/domains/user/services/userService';
 import { visitService } from '@/domains/visit/services/visitService';
 import { ANCExportOptions, PregnancyEpisodeCreate } from '@/domains/anc/api/anc';
 import { ancApi } from '@/domains/anc/api/anc';
+import { DashboardHero } from '@/app/components/DashboardHero';
+import {
+  getDashboardUserDisplayName,
+  useDashboardUser,
+} from '@/app/components/DashboardUserContext';
+import { HOSPITAL_NAME } from '@/shared/constants/branding';
 
 export function AncDashboard() {
+  const dashboardUser = useDashboardUser();
   const queueState = useAncQueue();
   const selectedPatientId = queueState.selectedVisit?.patient_id ?? null;
 
@@ -285,15 +292,22 @@ export function AncDashboard() {
 
   return (
     <div className="space-y-4">
-      <header className="rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-blue-50/40 to-emerald-50/30 px-4 py-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">ANC Care Workspace</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Pregnancy journey view for baseline, monitoring encounters, and obstetric history.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <DashboardHero
+        title="ANC Care Workspace"
+        subtitle={HOSPITAL_NAME}
+        workspaceLabel="Pregnancy baseline, monitoring encounters, and obstetric history"
+        monogram="K"
+        rightSlot={
+          <>
+            <div>
+              <span className="font-semibold">ANC Officer:</span>{' '}
+              {getDashboardUserDisplayName(dashboardUser)}
+            </div>
+            <div>ANC Workflow Active</div>
+          </>
+        }
+        actionsSlot={
+          <>
             <Button
               size="sm"
               variant="secondary"
@@ -312,9 +326,9 @@ export function AncDashboard() {
             >
               New visit
             </Button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_1fr]">
         <AncQueuePanel

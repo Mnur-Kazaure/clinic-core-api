@@ -1,5 +1,5 @@
 // /projects/clinic-monorepo/clinic-app/src/components/shared/Input.tsx
-import { InputHTMLAttributes } from 'react';
+import { InputHTMLAttributes, useId } from 'react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -7,14 +7,21 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ label, error, className = '', ...props }: InputProps) {
+  const generatedId = useId();
+  const inputId = props.id || generatedId;
+
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label
+          htmlFor={inputId}
+          className="mb-1 block text-sm font-medium text-gray-700"
+        >
           {label}
         </label>
       )}
       <input
+        id={inputId}
         className={`
           w-full px-3 py-2 border rounded-md shadow-sm
           text-gray-900 placeholder-gray-400 caret-gray-900

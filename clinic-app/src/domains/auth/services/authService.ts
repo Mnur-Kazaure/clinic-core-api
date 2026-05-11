@@ -1,5 +1,6 @@
 // /projects/clinic-monorepo/clinic-app/src/domains/auth/services/authService.ts
 import client from '@/api/client';
+import { setActiveDepartmentId } from '@/api/client';
 
 export interface LoginCredentials {
   email: string;
@@ -25,6 +26,7 @@ export const authService = {
   async login(credentials: LoginCredentials): Promise<void> {
     try {
       await client.post('/v1/auth/login', credentials);
+      setActiveDepartmentId(null);
     } catch (error: unknown) {
       const status = getResponseStatus(error);
       if (status === 401) {
@@ -43,6 +45,8 @@ export const authService = {
     } catch {
       // Silent fail on logout - clear client-side anyway
       console.warn('Logout API call failed');
+    } finally {
+      setActiveDepartmentId(null);
     }
   },
 
@@ -53,5 +57,22 @@ export const authService = {
     } catch {
       throw new AuthError('Session expired. Please login again.');
     }
+  },
+
+  async switchDepartment(
+    departmentId: string
+  ): Promise<{
+    detail: string;
+    current_department_id: string;
+    allowed_department_ids: string[];
+  }> {
+    const response = await client.post('/v1/auth/switch-department', {
+      department_id: departmentId,
+    });
+    const payload = response.data;
+    if (payload?.current_department_id) {
+      setActiveDepartmentId(payload.current_department_id);
+    }
+    return payload;
   },
 };

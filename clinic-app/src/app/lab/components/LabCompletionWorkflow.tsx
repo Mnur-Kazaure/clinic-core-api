@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   labService,
   LabCompletionResponse,
+  LabRequestWorkflowState,
 } from '@/domains/lab/services/labService';
 import { Button } from '@/shared/Button';
 import { Card } from '@/shared/Card';
@@ -11,8 +12,13 @@ import { Card } from '@/shared/Card';
 interface LabCompletionWorkflowProps {
   requestId: string;
   visitId: string;
+  selectedUnitId: string;
   testName: string;
-  hasRecordedResults?: boolean;
+  workflowState?: LabRequestWorkflowState | null;
+  workflowLoading?: boolean;
+  requestIdLabel: string;
+  visitIdLabel: string;
+  onCopyValue?: (key: string, value: string) => void | Promise<void>;
   onSuccess?: () => void;
   onCancel?: () => void;
 }
@@ -29,8 +35,13 @@ const COMPLETION_STEPS: CompletionStep[] = [
 export function LabCompletionWorkflow({
   requestId,
   visitId,
+  selectedUnitId,
   testName,
-  hasRecordedResults = true,
+  workflowState,
+  workflowLoading = false,
+  requestIdLabel,
+  visitIdLabel,
+  onCopyValue,
   onSuccess,
   onCancel,
 }: LabCompletionWorkflowProps) {
@@ -54,16 +65,9 @@ export function LabCompletionWorkflow({
       setIsProcessing(true);
       setError(null);
 
-      const result = await labService.completeRequest(requestId);
+      const result = await labService.completeRequest(requestId, selectedUnitId);
       setCompletionData(result);
-      setStep('COMPLETE_LAB');
-
-      if (result.visit_ready_for_transition) {
-        setStep('TRANSITION_VISIT');
-        await handleTransitionVisit();
-      } else {
-        setStep('DONE');
-      }
+      setStep(result.visit_ready_for_transition ? 'COMPLETE_LAB' : 'DONE');
     } catch (err: unknown) {
       console.error('Lab completion failed:', err);
       setError(getErrorDetail(err) || 'Failed to complete lab request');
@@ -73,19 +77,34 @@ export function LabCompletionWorkflow({
   };
 
   const handleTransitionVisit = async () => {
+    const expectedVersion = completionData?.visit_transition_expected_version;
+    if (expectedVersion === null || expectedVersion === undefined) {
+      setError(
+        'Lab request completed, but the visit transition context is unavailable. Refresh before updating the visit.'
+      );
+      return;
+    }
     try {
       setIsProcessing(true);
       setError(null);
 
-      await labService.completeVisitLab(visitId);
+      await labService.completeVisitLab(visitId, expectedVersion);
       setVisitTransitioned(true);
       setStep('DONE');
     } catch (err: unknown) {
       console.error('Visit transition failed:', err);
-      setError(getErrorDetail(err) || 'Failed to update visit status');
+      setError(
+        getErrorDetail(err) ||
+          'Lab request completed, but the visit status could not be updated.'
+      );
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleBeginVisitTransition = async () => {
+    setStep('TRANSITION_VISIT');
+    await handleTransitionVisit();
   };
 
   const handleFinish = () => {
@@ -103,6 +122,33 @@ export function LabCompletionWorkflow({
   };
 
   const completedIndex = COMPLETION_STEPS.indexOf(step);
+  const checklist = workflowState?.checklist ?? [];
+  const canStartCompletion = workflowState?.can_complete ?? false;
+  const completionMessage =
+    workflowState?.completion_message ||
+    'Completion requirements are being loaded for this request.';
+
+  const checklistStateClass = (state: string) => {
+    switch (state) {
+      case 'complete':
+        return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+      case 'blocked':
+        return 'border-rose-200 bg-rose-50 text-rose-800';
+      default:
+        return 'border-amber-200 bg-amber-50 text-amber-800';
+    }
+  };
+
+  const checklistIndicatorClass = (state: string) => {
+    switch (state) {
+      case 'complete':
+        return 'bg-emerald-600';
+      case 'blocked':
+        return 'bg-rose-600';
+      default:
+        return 'bg-amber-500';
+    }
+  };
 
   return (
     <Card
@@ -155,12 +201,53 @@ export function LabCompletionWorkflow({
 
         {step === 'CONFIRM' && (
           <div className="space-y-6">
-            {!hasRecordedResults && (
+            <div
+              data-testid="lab-completion-checklist"
+              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Completion requirements
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Completion stays blocked until each required workflow state is satisfied.
+                  </p>
+                </div>
+                {workflowLoading && (
+                  <span className="text-xs font-medium text-slate-500">
+                    Refreshing…
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {checklist.map((item) => (
+                  <div
+                    key={item.key}
+                    className={`rounded-xl border px-3 py-3 ${checklistStateClass(item.state)}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span
+                        className={`mt-1 inline-flex h-2.5 w-2.5 rounded-full ${checklistIndicatorClass(
+                          item.state
+                        )}`}
+                      />
+                      <div>
+                        <p className="text-sm font-semibold">{item.label}</p>
+                        {item.detail && (
+                          <p className="mt-1 text-xs opacity-90">{item.detail}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {!canStartCompletion && !workflowLoading && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-red-700 text-sm">
-                  At least one result must be recorded before completing this
-                  lab request.
-                </p>
+                <p className="text-red-700 text-sm">{completionMessage}</p>
               </div>
             )}
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
@@ -171,25 +258,43 @@ export function LabCompletionWorkflow({
               <ul className="list-disc pl-5 mt-2 text-sm text-yellow-700 space-y-1">
                 <li>Mark the lab request as COMPLETED</li>
                 <li>Set the completion timestamp</li>
-                <li>Update the visit status to LAB_COMPLETED</li>
-                <li>Make the visit available for next clinical steps</li>
+                <li>Advance the visit to the next clinical step after laboratory completion</li>
+                <li>Make the visit available for the next clinical action</li>
               </ul>
             </div>
 
             <div className="p-4 border rounded-md">
               <h4 className="font-medium text-gray-900 mb-2">Details</h4>
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
                 <div>
                   <span className="text-gray-600">Test:</span>
                   <p className="font-medium">{testName}</p>
                 </div>
                 <div>
                   <span className="text-gray-600">Request ID:</span>
-                  <p className="font-medium">{requestId.substring(0, 12)}...</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{requestIdLabel}</p>
+                    <button
+                      type="button"
+                      onClick={() => void onCopyValue?.('completion-request-id', requestId)}
+                      className="text-xs font-medium text-[#0B4DA2] hover:text-[#08386F]"
+                    >
+                      Copy
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="text-gray-600">Visit ID:</span>
-                  <p className="font-medium">{visitId.substring(0, 12)}...</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{visitIdLabel}</p>
+                    <button
+                      type="button"
+                      onClick={() => void onCopyValue?.('completion-visit-id', visitId)}
+                      className="text-xs font-medium text-[#0B4DA2] hover:text-[#08386F]"
+                    >
+                      Copy
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -208,7 +313,7 @@ export function LabCompletionWorkflow({
                 variant="primary"
                 onClick={handleCompleteLabRequest}
                 isLoading={isProcessing}
-                disabled={isProcessing || !hasRecordedResults}
+                disabled={isProcessing || workflowLoading || !canStartCompletion}
               >
                 Start Completion
               </Button>
@@ -266,9 +371,13 @@ export function LabCompletionWorkflow({
               {completionData?.visit_ready_for_transition ? (
                 <Button
                   variant="primary"
-                  onClick={handleTransitionVisit}
+                  onClick={() => void handleBeginVisitTransition()}
                   isLoading={isProcessing}
-                  disabled={isProcessing}
+                  disabled={
+                    isProcessing ||
+                    completionData.visit_transition_expected_version === null ||
+                    completionData.visit_transition_expected_version === undefined
+                  }
                 >
                   Update Visit Status
                 </Button>
@@ -320,9 +429,13 @@ export function LabCompletionWorkflow({
                 </Button>
                 <Button
                   variant="primary"
-                  onClick={handleTransitionVisit}
+                  onClick={() => void handleTransitionVisit()}
                   isLoading={isProcessing}
-                  disabled={isProcessing}
+                  disabled={
+                    isProcessing ||
+                    completionData?.visit_transition_expected_version === null ||
+                    completionData?.visit_transition_expected_version === undefined
+                  }
                 >
                   Complete Transition
                 </Button>

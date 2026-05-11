@@ -6,8 +6,10 @@ import { v4 as uuidv4 } from 'uuid';
 
 export interface VisitCreateRequest {
   patient_id: string;
-  assigned_doctor_id: string;
+  assigned_doctor_id?: string;
+  service_line_id?: string;
   service_line?: VisitServiceLine;
+  linked_follow_up_id?: string;
 }
 
 export type VisitCreateResponse = VisitResponse;
@@ -25,6 +27,18 @@ export interface VisitReassignRequest {
   expected_version: number;
   service_line?: VisitServiceLine;
   reason?: string;
+}
+
+export interface ServiceLineNode {
+  id: string;
+  clinic_id: string;
+  name: string;
+  parent_id: string | null;
+  department_id: string | null;
+  default_child_id: string | null;
+  requires_doctor: boolean;
+  is_active: boolean;
+  children: ServiceLineNode[];
 }
 
 export interface VisitIntakeFlagRequest {
@@ -144,9 +158,13 @@ export const visitService = {
   },
 
   // Get reception queue
-  async getQueue(status?: string): Promise<VisitResponse[]> {
+  async getQueue(
+    status?: string,
+    departmentId?: string | null
+  ): Promise<VisitResponse[]> {
     const params = {
       ...(status ? { status } : {}),
+      ...(departmentId ? { department_id: departmentId } : {}),
       purpose_of_use: PurposeOfUse.OPERATIONS,
       justification: 'Reception visit queue',
     };
@@ -155,9 +173,13 @@ export const visitService = {
   },
 
   // Get doctor's assigned visits
-  async getDoctorQueue(status?: string): Promise<VisitResponse[]> {
+  async getDoctorQueue(
+    status?: string,
+    departmentId?: string | null
+  ): Promise<VisitResponse[]> {
     const params = {
       ...(status ? { status } : {}),
+      ...(departmentId ? { department_id: departmentId } : {}),
       purpose_of_use: PurposeOfUse.TREATMENT,
       justification: 'Doctor visit queue',
     };
@@ -197,12 +219,28 @@ export const visitService = {
   },
 
   // Get recent visits for reception activity
-  async getRecentVisits(limit = 10): Promise<VisitResponse[]> {
+  async getRecentVisits(
+    limit = 10,
+    departmentId?: string | null
+  ): Promise<VisitResponse[]> {
     const response = await client.get('/v1/visits/recent', {
       params: {
         limit,
+        ...(departmentId ? { department_id: departmentId } : {}),
         purpose_of_use: PurposeOfUse.OPERATIONS,
         justification: 'Reception recent visits',
+      },
+    });
+    return response.data;
+  },
+
+  async getReceptionServiceLines(
+    departmentId?: string | null
+  ): Promise<ServiceLineNode[]> {
+    const response = await client.get('/v1/visits/service-lines', {
+      params: {
+        ...(departmentId ? { department_id: departmentId } : {}),
+        include_global_roots: true,
       },
     });
     return response.data;

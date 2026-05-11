@@ -11,8 +11,15 @@ interface StaffFormModalProps {
   isOpen: boolean;
   mode: 'create' | 'edit';
   initialData?: StaffResponse | null;
+  labUnitOptions: LabUnitOption[];
   onClose: () => void;
   onSubmit: (payload: StaffFormPayload) => Promise<void>;
+}
+
+export interface LabUnitOption {
+  id: string;
+  name: string;
+  path_label?: string;
 }
 
 export interface StaffFormPayload {
@@ -25,16 +32,35 @@ export interface StaffFormPayload {
   department?: string | null;
   room_label?: string | null;
   availability_status?: string | null;
+  allowed_lab_unit_ids?: string[];
+  default_lab_unit_id?: string | null;
 }
 
 const roleOptions = [
   UserRole.RECEPTION,
+  UserRole.CASHIER,
+  UserRole.ACCOUNTANT,
+  UserRole.CMD,
   UserRole.DOCTOR,
   UserRole.LAB,
+  UserRole.LAB_TECH,
+  UserRole.LAB_SCIENTIST,
+  UserRole.LAB_SUPERVISOR,
+  UserRole.LAB_MANAGER,
   UserRole.PHARMACY,
+  UserRole.PHARMACY_HOD,
+  UserRole.PHARMACY_STORE_OFFICER,
   UserRole.CHEW,
   UserRole.MIDWIFE,
 ];
+
+const roleLabels: Partial<Record<UserRole, string>> = {
+  [UserRole.LAB]: 'LAB (Legacy)',
+  [UserRole.LAB_MANAGER]: 'Medical Laboratory HOD',
+  [UserRole.CMD]: 'Chief Medical Director (CMD)',
+  [UserRole.PHARMACY_HOD]: 'Pharmacy HOD',
+  [UserRole.PHARMACY_STORE_OFFICER]: 'Pharmacy Store Officer',
+};
 
 const availabilityOptions = ['Available', 'On Call', 'Unavailable'];
 
@@ -42,6 +68,7 @@ export function StaffFormModal({
   isOpen,
   mode,
   initialData,
+  labUnitOptions,
   onClose,
   onSubmit,
 }: StaffFormModalProps) {
@@ -55,12 +82,28 @@ export function StaffFormModal({
     is_active: true,
     specialty: '',
     department: '',
-    room_label: '',
-    availability_status: '',
-  });
+      room_label: '',
+      availability_status: '',
+      allowed_lab_unit_ids: [],
+      default_lab_unit_id: null,
+    });
 
   const showDoctorFields = useMemo(
     () => form.role === UserRole.DOCTOR,
+    [form.role]
+  );
+  const isLabOperationalRole = useMemo(
+    () =>
+      [
+        UserRole.LAB,
+        UserRole.LAB_TECH,
+        UserRole.LAB_SCIENTIST,
+        UserRole.LAB_SUPERVISOR,
+      ].includes(form.role),
+    [form.role]
+  );
+  const isLabManagerRole = useMemo(
+    () => form.role === UserRole.LAB_MANAGER,
     [form.role]
   );
 
@@ -76,6 +119,8 @@ export function StaffFormModal({
         department: '',
         room_label: '',
         availability_status: '',
+        allowed_lab_unit_ids: [],
+        default_lab_unit_id: null,
       });
       setError(null);
       return;
@@ -90,6 +135,8 @@ export function StaffFormModal({
       department: initialData.department || '',
       room_label: initialData.room_label || '',
       availability_status: initialData.availability_status || '',
+      allowed_lab_unit_ids: initialData.allowed_lab_units?.map((unit) => unit.id) || [],
+      default_lab_unit_id: initialData.default_lab_unit_id || null,
     });
     setError(null);
   }, [initialData, isOpen]);
@@ -98,10 +145,36 @@ export function StaffFormModal({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleLabUnitToggle = (unitId: string, checked: boolean) => {
+    setForm((prev) => {
+      const selected = new Set(prev.allowed_lab_unit_ids || []);
+      if (checked) {
+        selected.add(unitId);
+      } else {
+        selected.delete(unitId);
+      }
+      const nextAllowed = Array.from(selected);
+      const nextDefault =
+        prev.default_lab_unit_id && nextAllowed.includes(prev.default_lab_unit_id)
+          ? prev.default_lab_unit_id
+          : nextAllowed[0] || null;
+      return {
+        ...prev,
+        allowed_lab_unit_ids: nextAllowed,
+        default_lab_unit_id: nextDefault,
+      };
+    });
+  };
+
   const handleSubmit = async () => {
     try {
       setSaving(true);
       setError(null);
+
+      if (isLabOperationalRole && (form.allowed_lab_unit_ids || []).length === 0) {
+        setError('Select at least one allowed lab unit for operational lab staff.');
+        return;
+      }
 
       await onSubmit({
         ...form,
@@ -109,6 +182,8 @@ export function StaffFormModal({
         department: showDoctorFields ? form.department : null,
         room_label: showDoctorFields ? form.room_label : null,
         availability_status: showDoctorFields ? form.availability_status : null,
+        allowed_lab_unit_ids: isLabOperationalRole ? form.allowed_lab_unit_ids : [],
+        default_lab_unit_id: isLabOperationalRole ? form.default_lab_unit_id : null,
       });
       onClose();
     } catch (err: any) {
@@ -167,11 +242,10 @@ export function StaffFormModal({
                 value={form.role}
                 onChange={(e) => handleChange('role', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={mode === 'edit'}
               >
                 {roleOptions.map((role) => (
                   <option key={role} value={role}>
-                    {role.replace('_', ' ')}
+                    {roleLabels[role] || role.replaceAll('_', ' ')}
                   </option>
                 ))}
               </select>
@@ -239,6 +313,90 @@ export function StaffFormModal({
                   </select>
                 </div>
               </div>
+            </div>
+          )}
+
+          {(isLabOperationalRole || isLabManagerRole) && (
+            <div className="mt-6 border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                Laboratory Workforce Access
+              </h3>
+              {isLabManagerRole ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Lab manager accounts route to the separate HOD/manager workspace and
+                  oversee unit activity without a technician queue assignment.
+                </div>
+              ) : labUnitOptions.length === 0 ? (
+                <Alert variant="error">
+                  No laboratory units are currently available. Configure Medical
+                  Laboratory units in Service Lines first.
+                </Alert>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <p className="mb-2 text-sm font-medium text-gray-700">
+                      Allowed Lab Units
+                    </p>
+                    <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-3">
+                      {labUnitOptions.map((unit) => {
+                        const checked = (form.allowed_lab_unit_ids || []).includes(unit.id);
+                        return (
+                          <label
+                            key={unit.id}
+                            className="flex items-start gap-3 rounded-md border border-slate-100 px-3 py-2 hover:bg-slate-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(event) =>
+                                handleLabUnitToggle(unit.id, event.target.checked)
+                              }
+                              className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-slate-700">
+                              <span className="block font-medium">{unit.name}</span>
+                              {unit.path_label && (
+                                <span className="block text-xs text-slate-500">
+                                  {unit.path_label}
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Default Lab Unit
+                    </label>
+                    <select
+                      value={form.default_lab_unit_id || ''}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          default_lab_unit_id: event.target.value || null,
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {(form.allowed_lab_unit_ids || []).length === 0 ? (
+                        <option value="">Select allowed units first</option>
+                      ) : (
+                        (form.allowed_lab_unit_ids || []).map((unitId) => {
+                          const option = labUnitOptions.find((unit) => unit.id === unitId);
+                          return (
+                            <option key={unitId} value={unitId}>
+                              {option?.name || unitId}
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

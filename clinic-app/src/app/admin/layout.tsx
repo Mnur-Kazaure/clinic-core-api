@@ -8,6 +8,9 @@ import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { AdminSidebar } from './components/AdminSidebar';
 import { AdminTopNav } from './components/AdminTopNav';
 import { clinicService } from '@/domains/clinic/services/clinicService';
+import { UserDTO } from '@/shared/types';
+import { DashboardUserProvider } from '@/app/components/DashboardUserContext';
+import { normalizeClinicDisplayName } from '@/shared/constants/branding';
 
 export default function AdminLayout({
   children,
@@ -19,6 +22,7 @@ export default function AdminLayout({
   const [authStatus, setAuthStatus] = useState<
     'checking' | 'authorized' | 'unauthorized'
   >('checking');
+  const [user, setUser] = useState<UserDTO | null>(null);
   const [clinicName, setClinicName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,9 +47,10 @@ export default function AdminLayout({
           return;
         }
 
+        setUser(user);
         try {
           const profile = await clinicService.getProfile();
-          setClinicName(profile.name);
+          setClinicName(normalizeClinicDisplayName(profile.name));
         } catch {
           setClinicName(null);
         }
@@ -73,51 +78,53 @@ export default function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 admin-font">
-      <div className="border-b border-slate-200 bg-slate-900 text-slate-100">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
-            <span className="font-medium">System operational</span>
-            <span className="text-slate-400">|</span>
-            <span className="font-mono">
-              {clinicName || 'Clinic Admin'}
-            </span>
-          </div>
-          <div className="flex items-center gap-3 text-slate-300">
-            <span className="font-mono">
-              {new Date().toLocaleDateString('en-GB', {
-                weekday: 'short',
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-              })}
-            </span>
-            <span className="text-slate-500">|</span>
-            <span className="font-mono">
-              {new Date().toLocaleTimeString('en-GB', {
-                hour12: false,
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
+    <DashboardUserProvider user={user}>
+      <div className="min-h-screen bg-slate-50 admin-font">
+        <div className="border-b border-slate-200 bg-slate-900 text-slate-100">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2 text-xs">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+              <span className="font-medium">System operational</span>
+              <span className="text-slate-400">|</span>
+              <span className="font-mono">
+                {clinicName || 'Clinic Admin'}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-slate-300">
+              <span className="font-mono">
+                {new Date().toLocaleDateString('en-GB', {
+                  weekday: 'short',
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </span>
+              <span className="text-slate-500">|</span>
+              <span className="font-mono">
+                {new Date().toLocaleTimeString('en-GB', {
+                  hour12: false,
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex min-h-[calc(100vh-40px)]">
-        <aside className="hidden w-64 border-r border-slate-200 bg-white lg:block">
-          <AdminSidebar clinicName={clinicName || 'Clinic Admin'} />
-        </aside>
-        <div className="flex-1">
-          <div className="border-b border-slate-200 bg-white">
-            <AdminTopNav />
+        <div className="flex min-h-[calc(100vh-40px)]">
+          <aside className="hidden w-64 border-r border-slate-200 bg-white lg:block">
+            <AdminSidebar clinicName={clinicName || 'Clinic Admin'} />
+          </aside>
+          <div className="flex-1">
+            <div className="border-b border-slate-200 bg-white">
+              <AdminTopNav />
+            </div>
+            <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
+              {children}
+            </main>
           </div>
-          <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
-            {children}
-          </main>
         </div>
       </div>
-    </div>
+    </DashboardUserProvider>
   );
 }

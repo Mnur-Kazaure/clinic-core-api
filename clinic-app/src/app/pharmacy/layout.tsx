@@ -6,6 +6,7 @@ import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { UserDTO } from '@/shared/types';
 import { Header } from '@/app/components/Header';
+import { DashboardUserProvider } from '@/app/components/DashboardUserContext';
 import { clinicService } from '@/domains/clinic/services/clinicService';
 
 export default function PharmacyLayout({
@@ -72,15 +73,11 @@ export default function PharmacyLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {user && (
-        <Header
-          userRole={user.role}
-          userName={user.full_name}
-          clinicName={clinicName}
-        />
-      )}
-      <main className="p-6">{children}</main>
-    </div>
+    <DashboardUserProvider user={user}>
+      <div className="min-h-screen bg-gray-50">
+        {user && <Header userRole={user.role} clinicName={clinicName} />}
+        <main className="p-6">{children}</main>
+      </div>
+    </DashboardUserProvider>
   );
 }

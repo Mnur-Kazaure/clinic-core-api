@@ -21,6 +21,8 @@ const menuGroups = [
     title: 'Governance',
     items: [
       { label: 'Access Control', href: '/admin/access' },
+      { label: 'Service Lines', href: '/admin/service-lines' },
+      { label: 'Pharmacy Catalog', href: '/admin#pharmacy-catalog' },
       { label: 'Admission Requests', href: '/admin/admissions' },
       { label: 'Audit Log', href: '/admin/audit' },
       { label: 'System Settings', href: '/admin/settings' },

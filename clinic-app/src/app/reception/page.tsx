@@ -14,12 +14,21 @@ import { VisitResponse } from '@/shared/types';
 import { visitService } from '@/domains/visit/services/visitService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 import { PurposeOfUse, VisitServiceLine } from '@/shared/enums';
+import { roleSessionService } from '@/domains/auth/services/roleSessionService';
+import { authService } from '@/domains/auth/services/authService';
 import {
   FollowUpListItem,
   followUpService,
 } from '@/domains/followup/services/followupService';
+import { DashboardHero } from '@/app/components/DashboardHero';
+import {
+  getDashboardUserDisplayName,
+  useDashboardUser,
+} from '@/app/components/DashboardUserContext';
+import { HOSPITAL_NAME } from '@/shared/constants/branding';
 
 export default function ReceptionPage() {
+  const dashboardUser = useDashboardUser();
   const [isStartVisitModalOpen, setIsStartVisitModalOpen] = useState(false);
   const [showRegistrationForm, setShowRegistrationForm] = useState(false);
   const [refreshQueue, setRefreshQueue] = useState(0);
@@ -57,6 +66,13 @@ export default function ReceptionPage() {
   const [rescheduleReason, setRescheduleReason] = useState('Patient requested new date');
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+  const [currentDepartmentId, setCurrentDepartmentId] = useState<string | null>(null);
+  const [currentDepartmentName, setCurrentDepartmentName] = useState<string | null>(null);
+  const [allowedDepartments, setAllowedDepartments] = useState<
+    { id: string; name: string; is_primary: boolean }[]
+  >([]);
+  const [switchingDepartment, setSwitchingDepartment] = useState(false);
+  const [departmentError, setDepartmentError] = useState<string | null>(null);
 
   const handleVisitCreated = () => {
     setIsStartVisitModalOpen(false);
@@ -80,7 +96,7 @@ export default function ReceptionPage() {
 
   const refreshDashboard = async () => {
     try {
-      const queue = await visitService.getQueue();
+      const queue = await visitService.getQueue(undefined, currentDepartmentId);
       const pending = queue.filter(
         (visit) => visit.status === 'PHARMACY_PENDING'
       );
@@ -232,7 +248,7 @@ export default function ReceptionPage() {
       try {
         setRecentLoading(true);
         setRecentError(null);
-        const data = await visitService.getRecentVisits(5);
+        const data = await visitService.getRecentVisits(5, currentDepartmentId);
         if (isMounted) {
           setRecentVisits(data);
         }
@@ -252,7 +268,7 @@ export default function ReceptionPage() {
     return () => {
       isMounted = false;
     };
-  }, [refreshQueue]);
+  }, [refreshQueue, currentDepartmentId]);
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -275,8 +291,8 @@ export default function ReceptionPage() {
         setStatsLoading(true);
         setStatsError(null);
         const [queueData, completedData] = await Promise.all([
-          visitService.getQueue(),
-          visitService.getQueue('COMPLETED'),
+          visitService.getQueue(undefined, currentDepartmentId),
+          visitService.getQueue('COMPLETED', currentDepartmentId),
         ]);
         if (!isMounted) return;
         const total = queueData.length;
@@ -288,7 +304,7 @@ export default function ReceptionPage() {
           (visit) => visit.intake_emergency_flag
         ).length;
         setQueueStats({ total, waiting, completed, emergency });
-      } catch (error) {
+      } catch {
         if (isMounted) {
           setStatsError('Metrics unavailable');
           setQueueStats({ total: 0, waiting: 0, completed: 0, emergency: 0 });
@@ -304,7 +320,49 @@ export default function ReceptionPage() {
     return () => {
       isMounted = false;
     };
-  }, [refreshQueue]);
+  }, [refreshQueue, currentDepartmentId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDepartmentContext() {
+      try {
+        setDepartmentError(null);
+        const user = await roleSessionService.getCurrentUser();
+        if (cancelled) return;
+        setCurrentDepartmentId(user.current_department_id || null);
+        setCurrentDepartmentName(user.current_department_name || null);
+        setAllowedDepartments(user.allowed_departments || []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to load department context:', error);
+        setDepartmentError('Unable to load department context.');
+      }
+    }
+
+    loadDepartmentContext();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleDepartmentSwitch = async (departmentId: string) => {
+    try {
+      setSwitchingDepartment(true);
+      setDepartmentError(null);
+      await authService.switchDepartment(departmentId);
+      const user = await roleSessionService.getCurrentUser();
+      setCurrentDepartmentId(user.current_department_id || null);
+      setCurrentDepartmentName(user.current_department_name || null);
+      setAllowedDepartments(user.allowed_departments || []);
+      setRefreshQueue((prev) => prev + 1);
+    } catch (error) {
+      console.error('Failed to switch department:', error);
+      setDepartmentError('Department switch failed. Please retry.');
+    } finally {
+      setSwitchingDepartment(false);
+    }
+  };
 
   useEffect(() => {
     if (!recentMrnIssued) return;
@@ -322,25 +380,54 @@ export default function ReceptionPage() {
   }, [followUpActionSuccess]);
 
   const formatStat = (value: number) => (statsLoading ? '—' : value);
+  const receptionistName = getDashboardUserDisplayName(dashboardUser);
+  const resolvedDepartmentName =
+    currentDepartmentName ||
+    allowedDepartments.find((department) => department.id === currentDepartmentId)?.name ||
+    allowedDepartments.find((department) => department.is_primary)?.name ||
+    allowedDepartments[0]?.name ||
+    'Front Desk';
 
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Reception Dashboard
-              </h1>
-              <p className="text-gray-600">
-                Manage patient visits and clinic workflow
-              </p>
-            </div>
-            <div className="mt-4 sm:mt-0 flex flex-wrap items-center gap-3">
-              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                Today • {new Date().toLocaleDateString()}
-              </span>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2">
+        <DashboardHero
+          title="Reception Dashboard"
+          subtitle={HOSPITAL_NAME}
+          workspaceLabel="Patient registration, visit intake, and queue coordination"
+          monogram="K"
+          rightSlot={
+            <>
+              <div>
+                <span className="font-semibold">Receptionist:</span> {receptionistName}
+              </div>
+              <div>
+                <span className="font-semibold">Desk:</span> {resolvedDepartmentName} Reception
+              </div>
+              <div>{new Date().toLocaleDateString()}</div>
+            </>
+          }
+          actionsSlot={
+            <>
+              {allowedDepartments.length > 1 && (
+                <select
+                  value={currentDepartmentId || allowedDepartments[0]?.id || ''}
+                  onChange={(event) => handleDepartmentSwitch(event.target.value)}
+                  disabled={switchingDepartment}
+                  className="h-9 rounded-md border border-white/50 bg-white/10 px-2 text-xs text-white"
+                >
+                  {allowedDepartments.map((department) => (
+                    <option
+                      key={department.id}
+                      value={department.id}
+                      className="text-slate-900"
+                    >
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <Button
                 variant="primary"
                 onClick={() => setIsStartVisitModalOpen(true)}
@@ -355,10 +442,10 @@ export default function ReceptionPage() {
                   ? 'Hide Registration'
                   : 'Register Patient'}
               </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+            </>
+          }
+        />
+      </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -402,6 +489,9 @@ export default function ReceptionPage() {
 
         {statsError && (
           <div className="mb-6 text-sm text-red-600">{statsError}</div>
+        )}
+        {departmentError && (
+          <div className="mb-6 text-sm text-red-600">{departmentError}</div>
         )}
 
         {showRegistrationForm && (
@@ -652,6 +742,7 @@ export default function ReceptionPage() {
           isOpen={isStartVisitModalOpen}
           onClose={() => setIsStartVisitModalOpen(false)}
           onSuccess={handleVisitCreated}
+          currentDepartmentId={currentDepartmentId}
           onContinueVisit={(visitId) => {
             setSelectedVisitId(visitId);
             setIsDetailsModalOpen(true);
@@ -730,7 +821,7 @@ export default function ReceptionPage() {
       <footer className="bg-white border-t mt-8 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-gray-500">
-            Clinic Management System • {new Date().toLocaleDateString()}
+            {HOSPITAL_NAME} • {new Date().toLocaleDateString()}
           </p>
         </div>
       </footer>

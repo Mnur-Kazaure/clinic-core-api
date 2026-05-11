@@ -7,6 +7,7 @@ import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { UserDTO } from '@/shared/types';
 import { Header } from '../components/Header';
+import { DashboardUserProvider } from '@/app/components/DashboardUserContext';
 import { clinicService } from '@/domains/clinic/services/clinicService';
 
 export default function ReceptionLayout({
@@ -77,19 +78,15 @@ export default function ReceptionLayout({
 
   // ✅ Pass user data down via props to children
   return (
-    <div className="min-h-screen bg-gray-50">
-      {user && (
-        <Header
-          userRole={user.role}
-          userName={user.full_name}
-          clinicName={clinicName}
-        />
-      )}
-      <main className="p-6">
-        {/* Pass user as props to children via React.cloneElement */}
-        {children}
-      </main>
-    </div>
+    <DashboardUserProvider user={user}>
+      <div className="min-h-screen bg-gray-50">
+        {user && <Header userRole={user.role} clinicName={clinicName} />}
+        <main className="p-6">
+          {/* Pass user as props to children via React.cloneElement */}
+          {children}
+        </main>
+      </div>
+    </DashboardUserProvider>
   );
 }
 

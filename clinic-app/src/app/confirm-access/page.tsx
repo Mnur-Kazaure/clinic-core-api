@@ -36,8 +36,7 @@ export default function ConfirmAccessPage() {
         }
         
         // Validate role is supported
-        // const route = roleRoutes[user.role as keyof typeof roleRoutes];
-        const route = roleRoutes[user.role as UserRole];
+        const route = roleRoutes[user.role as keyof typeof roleRoutes];
         if (!route) {
           console.log(`❌ [DEBUG] Unsupported role: ${user.role}`);
           setErrorMessage(`Role "${user.role}" is not supported.`);
@@ -48,9 +47,18 @@ export default function ConfirmAccessPage() {
         console.log(`✅ [DEBUG] Role ${user.role} supported. Redirecting to: ${route}`);
         const roleLabels: Record<UserRole, string> = {
           RECEPTION: 'Reception',
+          CASHIER: 'Cashier',
+          ACCOUNTANT: 'Accountant',
+          CMD: 'Chief Medical Director (CMD)',
           DOCTOR: 'Doctor',
           LAB: 'Lab',
+          LAB_TECH: 'Lab Technician',
+          LAB_SCIENTIST: 'Lab Scientist',
+          LAB_SUPERVISOR: 'Lab Supervisor',
+          LAB_MANAGER: 'Medical Laboratory HOD',
           PHARMACY: 'Pharmacy',
+          PHARMACY_HOD: 'Pharmacy HOD',
+          PHARMACY_STORE_OFFICER: 'Pharmacy Store Officer',
           CHEW: 'ANC (CHEW)',
           MIDWIFE: 'Maternity (Midwife)',
           ADMIN: 'Admin',
