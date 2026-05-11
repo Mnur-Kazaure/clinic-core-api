@@ -1,4 +1,3 @@
-# alembic/env.py
 import os
 from logging.config import fileConfig
 
@@ -7,14 +6,15 @@ from alembic import context
 
 # Import your Base and all models so Alembic can detect metadata
 from app.core.database import Base
+from app.core.config import settings
 from app.models import *  # Import all models to include in migrations
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Override SQLAlchemy URL with environment variable
-database_url = os.getenv("DATABASE_URL")
+# Prefer explicit DATABASE_URL; fall back to application settings (.env).
+database_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 

@@ -29,6 +29,7 @@ class VisitResponse(BaseModel):
     clinic_id: UUID
     status: VisitStatus
     service_line: VisitServiceLine
+    service_line_id: Optional[UUID] = None
     triage_state: VisitTriageState = VisitTriageState.PENDING
     triage_acuity: Optional[ClinicalPriorityLevel] = None
     triaged_at: Optional[datetime] = None
@@ -99,7 +100,8 @@ class VisitTimelineResponse(BaseModel):
 
 class VisitCreateRequest(BaseModel):
     patient_id: UUID
-    assigned_doctor_id: UUID
+    assigned_doctor_id: Optional[UUID] = None
+    service_line_id: Optional[UUID] = None
     service_line: VisitServiceLine = VisitServiceLine.OPD
     linked_follow_up_id: Optional[UUID] = None
 

@@ -59,6 +59,11 @@ class User(Base):
         nullable=True,
     )
 
+    default_lab_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("service_lines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     role: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

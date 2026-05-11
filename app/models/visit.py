@@ -34,9 +34,9 @@ class Visit(Base):
     )
 
 
-    assigned_doctor_id: Mapped[uuid.UUID] = mapped_column(
+    assigned_doctor_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
     )
 
     linked_follow_up_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -54,6 +54,12 @@ class Visit(Base):
         nullable=False,
         default=VisitServiceLine.OPD,
         server_default=VisitServiceLine.OPD.value,
+    )
+
+    # Table-driven service line hierarchy (Phase 1 expansion).
+    service_line_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("service_lines.id"),
+        nullable=True,
     )
 
     triage_state: Mapped[VisitTriageState] = mapped_column(
