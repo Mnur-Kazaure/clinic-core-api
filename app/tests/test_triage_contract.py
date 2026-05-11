@@ -191,6 +191,33 @@ def test_start_consultation_requires_active_triage_assessment(db, clinic_id):
     assert exc.value.detail["code"] == "RETRIAGE_REQUIRED"
 
 
+def test_start_consultation_from_registered_is_allowed_for_assigned_doctor(
+    db,
+    clinic_id,
+):
+    _seed_clinic(db, clinic_id)
+    doctor = _seed_user(db, clinic_id, UserRole.DOCTOR, "doctor-registered@triage.test")
+    patient = _seed_patient(db, clinic_id)
+    visit = _seed_visit(
+        db,
+        clinic_id,
+        patient.id,
+        owner_id=doctor.id,
+        service_line=VisitServiceLine.OPD,
+        status=VisitStatus.REGISTERED,
+    )
+
+    updated_visit = VisitService(db).transition_visit(
+        visit_id=visit.id,
+        to_status=VisitStatus.IN_CONSULTATION,
+        user=doctor,
+        expected_version=visit.version,
+    )
+
+    assert updated_visit.status == VisitStatus.IN_CONSULTATION
+    assert updated_visit.version == 2
+
+
 def test_doctor_fallback_requires_reason_code(db, clinic_id):
     _seed_clinic(db, clinic_id)
     doctor = _seed_user(db, clinic_id, UserRole.DOCTOR, "doctor3@triage.test")

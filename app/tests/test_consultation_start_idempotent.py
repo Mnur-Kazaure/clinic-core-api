@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.v1.consultation import start_consultation
+import app.models  # noqa: F401
 from app.models.base import Base
 from app.models.user import User
 from app.models.visit import Visit
