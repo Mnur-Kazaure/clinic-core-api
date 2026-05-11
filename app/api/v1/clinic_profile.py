@@ -24,7 +24,7 @@ router = APIRouter(prefix="/clinic", tags=["Clinic"])
 )
 def get_clinic_profile(
     db: Session = Depends(get_db),
-    current_user=Depends(require_clinic_admin),
+    current_user=Depends(get_current_user),
 ):
     service = ClinicService(db)
     return service.get_clinic_profile(current_user.clinic_id)

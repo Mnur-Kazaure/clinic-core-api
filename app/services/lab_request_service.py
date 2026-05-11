@@ -1,8 +1,10 @@
 # app/services/lab_request_service.py
 import uuid
 from app.models.lab_request import LabRequest
-from app.shared.enums import LabRequestStatus
+from app.shared.enums import LabRequestStatus, LabRequestWorkflowStatus
+from app.services.billing_workflow_service import BillingWorkflowService
 from app.services.event_service import EventService
+from app.services.lab_foundation_service import LabFoundationService
 
 
 # Service for managing lab requests
@@ -11,7 +13,15 @@ class LabRequestService:
         self.db = db
         self.event_service = EventService(db)
 
-    def create_request(self, visit, test_name, doctor_id, special_instructions=None):
+    def create_request(
+        self,
+        visit,
+        test_name,
+        doctor_id,
+        special_instructions=None,
+        test_code: str | None = None,
+        actor=None,
+    ):
         existing = (
             self.db.query(LabRequest)
             .filter(
@@ -25,13 +35,41 @@ class LabRequestService:
         if existing:
             return existing
 
+        billing_actor = actor or type(
+            "BillingActor",
+            (),
+            {
+                "id": doctor_id,
+                "role": "DOCTOR",
+            },
+        )()
+
+        billing_item = BillingWorkflowService(self.db).create_lab_billing_item(
+            visit=visit,
+            test_name=test_name,
+            test_code=test_code,
+            actor=billing_actor,
+            auto_commit=False,
+        )
+        catalog, config = LabFoundationService(self.db).resolve_catalog_config_for_order(
+            clinic_id=visit.clinic_id,
+            test_name=test_name,
+            test_code=test_code,
+        )
+
         lab_request = LabRequest(
             id=uuid.uuid4(),
             visit_id=visit.id,
+            billing_item_id=billing_item.id,
             clinic_id=visit.clinic_id,
             test_name=test_name,
+            test_code=test_code or billing_item.charge_code,
             special_instructions=special_instructions,
             requested_by=doctor_id,
+            lab_test_catalog_id=catalog.id if catalog else None,
+            lab_test_config_id=config.id if config else None,
+            target_unit_id=config.unit_id if config else catalog.unit_id if catalog else None,
+            workflow_status=LabRequestWorkflowStatus.ORDERED,
             status=LabRequestStatus.PENDING,
         )
 
@@ -39,7 +77,7 @@ class LabRequestService:
         self.db.commit()
         self.db.refresh(lab_request)
 
-        self.event_service.emit(
+        self.event_service.build_event(
             event_type="LAB_ORDERED",
             actor_id=doctor_id,
             actor_role="DOCTOR",
@@ -50,8 +88,11 @@ class LabRequestService:
                 "lab_request_id": str(lab_request.id),
                 "visit_id": str(visit.id),
                 "test_name": lab_request.test_name,
+                "test_code": test_code,
                 "special_instructions": lab_request.special_instructions,
+                "billing_item_id": str(billing_item.id),
             },
         )
+        self.db.commit()
 
         return lab_request

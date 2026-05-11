@@ -47,6 +47,8 @@ from app.models.identity_map_revocation import IdentityMapRevocation
 from app.models.consultation import Consultation
 from app.schemas.visit import AllowedTransitionsResponse
 from app.schemas.visit import VisitTimelineResponse
+from app.schemas.service_line import ServiceLineTreeNode
+from app.services.service_line_service import ServiceLineService
 
 
 router = APIRouter(prefix="/visits", tags=["Visits"])
@@ -554,6 +556,7 @@ def get_visit_timeline(
 @router.get("/queue", response_model=list[VisitResponse])
 def get_queue(
     status: Optional[VisitStatus] = None,
+    department_id: UUID | None = None,
     db=Depends(get_db),
     current_user=Depends(require_reception),
 ):
@@ -563,9 +566,14 @@ def get_queue(
     MVP: returns all visits for clinic (optionally by status).
     """
     service = VisitService(db)
+    effective_department_id = _resolve_department_filter(
+        current_user=current_user,
+        requested_department_id=department_id,
+    )
     visits = service.get_queue_for_clinic(
         clinic_id=current_user.clinic_id,
         status=status,
+        department_id=effective_department_id,
     )
     _attach_patient_names(db, visits)
     return visits
@@ -590,11 +598,37 @@ def get_triage_queue(
     _attach_patient_names(db, visits)
     return visits
 
+
+@router.get(
+    "/service-lines",
+    response_model=list[ServiceLineTreeNode],
+    status_code=status.HTTP_200_OK,
+)
+def list_reception_service_lines(
+    include_inactive: bool = False,
+    include_global_roots: bool = True,
+    department_id: UUID | None = None,
+    db=Depends(get_db),
+    current_user=Depends(require_reception),
+):
+    effective_department_id = _resolve_department_filter(
+        current_user=current_user,
+        requested_department_id=department_id,
+    )
+    nodes = ServiceLineService(db).list_tree(
+        clinic_id=current_user.clinic_id,
+        include_inactive=include_inactive,
+        department_id=effective_department_id,
+        include_global_roots=include_global_roots,
+    )
+    return [ServiceLineTreeNode.model_validate(node) for node in nodes]
+
 # app/api/v1/visit.py
 # Doctor visit queue
 @router.get("/doctor-queue", response_model=list[VisitResponse])
 def get_doctor_queue(
     status: Optional[VisitStatus] = None,
+    department_id: UUID | None = None,
     db=Depends(get_db),
     current_user=Depends(require_doctor),
 ):
@@ -604,10 +638,15 @@ def get_doctor_queue(
     Returns visits assigned to current doctor only.
     """
     service = VisitService(db)
+    effective_department_id = _resolve_department_filter(
+        current_user=current_user,
+        requested_department_id=department_id,
+    )
     visits = service.get_queue_for_doctor(
         clinic_id=current_user.clinic_id,
         doctor_id=current_user.id,
         status=status,
+        department_id=effective_department_id,
     )
     _attach_patient_names(db, visits)
     _attach_consultation_status(db, visits)
@@ -617,16 +656,20 @@ def get_doctor_queue(
 @router.get("/recent", response_model=list[VisitResponse])
 def get_recent_visits(
     limit: int = 10,
+    department_id: UUID | None = None,
     db=Depends(get_db),
     current_user=Depends(require_reception),
 ):
-    visits = (
-        db.query(Visit)
-        .filter(Visit.clinic_id == current_user.clinic_id)
-        .order_by(Visit.updated_at.desc())
-        .limit(limit)
-        .all()
+    effective_department_id = _resolve_department_filter(
+        current_user=current_user,
+        requested_department_id=department_id,
     )
+    visits = VisitService(db).get_queue_for_clinic(
+        clinic_id=current_user.clinic_id,
+        status=None,
+        department_id=effective_department_id,
+    )
+    visits = sorted(visits, key=lambda v: v.updated_at, reverse=True)[:limit]
     _attach_patient_names(db, visits)
     return visits
 
@@ -768,6 +811,21 @@ def _resolve_canonical_patient_id(db, *, clinic_id: UUID, patient_id: UUID) -> U
             return current
         current = mapping.to_patient_id
     return patient_id
+
+
+def _resolve_department_filter(*, current_user, requested_department_id: UUID | None) -> UUID | None:
+    allowed_department_ids = getattr(current_user, "allowed_department_ids", None) or []
+    current_department_id = getattr(current_user, "current_department_id", None)
+
+    if requested_department_id is None:
+        return current_department_id
+
+    if allowed_department_ids and requested_department_id not in allowed_department_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Department access denied",
+        )
+    return requested_department_id
 
 
 def _attach_patient_name(db, visit: Visit) -> None:

@@ -43,6 +43,10 @@ from app.schemas.admin import (
     ChargeCatalogCreateRequest,
     ChargeCatalogUpdateRequest,
 )
+from app.schemas.pharmacy_catalog import PharmacyCatalogRegistryRowResponse
+from app.services.pharmacy_catalog_governance_service import (
+    PharmacyCatalogGovernanceService,
+)
 from app.shared.enums import (
     UserRole,
     VisitStatus,
@@ -895,4 +899,18 @@ def update_charge_catalog(
         active=item.active,
         usage_today_count=0,
         usage_today_minor=0,
+    )
+
+
+@router.get(
+    "/pharmacy-catalog",
+    response_model=list[PharmacyCatalogRegistryRowResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_pharmacy_catalog_registry(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_clinic_admin),
+):
+    return PharmacyCatalogGovernanceService(db).list_catalog_items(
+        clinic_id=current_user.clinic_id,
     )

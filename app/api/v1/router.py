@@ -1,6 +1,7 @@
 # app/api/v1/router.py
 from fastapi import APIRouter
 from . import (
+    accountant,
     admin,
     admissions,
     anc,
@@ -24,9 +25,13 @@ from . import (
     maternity,
     patient,
     pharmacy,
+    pharmacy_cmd,
+    pharmacy_hod,
+    pharmacy_store,
     pmr,
     prescriptions,
     priority,
+    service_lines,
     user,
     visit,
     wards,
@@ -40,6 +45,9 @@ api_router.include_router(visit.router, tags=["visits"])
 # api_router.include_router(consultation.router, tags=["consultations"])
 api_router.include_router(lab.router, tags=["lab"])
 api_router.include_router(pharmacy.router, tags=["pharmacy"])
+api_router.include_router(pharmacy_cmd.router, tags=["pharmacy_cmd"])
+api_router.include_router(pharmacy_store.router, tags=["pharmacy_store"])
+api_router.include_router(pharmacy_hod.router, tags=["pharmacy_hod"])
 api_router.include_router(auth.router, tags=["auth"])
 api_router.include_router(patient.router, tags=["patient"])
 api_router.include_router(consultation.router, tags=["consultations"])
@@ -66,3 +74,5 @@ api_router.include_router(condition_profiles.router, tags=["condition_profiles"]
 api_router.include_router(diagnosis_mappings.router, tags=["diagnosis_mappings"])
 api_router.include_router(chronic_recalls.router, tags=["chronic_recalls"])
 api_router.include_router(follow_ups.router, tags=["follow_ups"])
+api_router.include_router(service_lines.router, tags=["service_lines"])
+api_router.include_router(accountant.router, tags=["accountant"])

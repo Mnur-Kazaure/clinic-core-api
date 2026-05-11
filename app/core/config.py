@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     # Core app
     APP_ENV: Literal["dev", "prod"] = "dev"
     DATABASE_URL: str
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     
     # Auth
     AUTH_JWT_SECRET_KEY: str

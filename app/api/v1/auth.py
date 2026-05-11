@@ -1,8 +1,9 @@
 # app/api/v1/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
+from uuid import UUID
+
 from app.core.config import settings
-import datetime
 from app.core.database import get_db
 from app.core.auth.passwords import verify_password
 from app.core.auth.jwt import encode_access_token
@@ -16,6 +17,8 @@ from app.core.auth.repositories.sqlalchemy_refresh_token_repository import (
 )
 from app.schemas.auth import MeResponse
 from app.shared.enums import UserRole
+from app.schemas.auth import SwitchDepartmentRequest, SwitchDepartmentResponse
+from app.services.department_mapping_service import DepartmentMappingService
 
 
 
@@ -30,10 +33,19 @@ def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
     return AuthService(repo)
 
 
-
-
-# Add these imports at the top
-
+def _resolve_department_context(*, db: Session, user: User) -> tuple[UUID | None, list[UUID]]:
+    mapping_service = DepartmentMappingService(db)
+    allowed_department_ids = mapping_service.user_allowed_department_ids(
+        clinic_id=user.clinic_id,
+        user_id=user.id,
+    )
+    current_department_id = mapping_service.user_primary_department_id(
+        clinic_id=user.clinic_id,
+        user_id=user.id,
+    )
+    if current_department_id is None and allowed_department_ids:
+        current_department_id = allowed_department_ids[0]
+    return current_department_id, allowed_department_ids
 
 # Token expiry settings
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS // 60
@@ -64,10 +76,17 @@ def login(
             )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    current_department_id, allowed_department_ids = _resolve_department_context(
+        db=db,
+        user=user,
+    )
+
     access_token = encode_access_token(
         user_id=user.id,
         role=UserRole(user.role),
         clinic_id=user.clinic_id,
+        current_department_id=current_department_id,
+        allowed_department_ids=allowed_department_ids,
     )
 
     refresh_token = auth_service.issue_refresh_token(user.id)
@@ -90,7 +109,11 @@ def login(
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # 🚨 ADD THIS
     )
 
-    return {"detail": "Login successful"}
+    return {
+        "detail": "Login successful",
+        "current_department_id": current_department_id,
+        "allowed_department_ids": allowed_department_ids,
+    }
 
 @router.post("/refresh", status_code=status.HTTP_200_OK)
 def refresh(
@@ -117,10 +140,17 @@ def refresh(
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
 
+    current_department_id, allowed_department_ids = _resolve_department_context(
+        db=db,
+        user=user,
+    )
+
     access_token = encode_access_token(
         user_id=user.id,
         role=UserRole(user.role),
         clinic_id=user.clinic_id,
+        current_department_id=current_department_id,
+        allowed_department_ids=allowed_department_ids,
     )
 
     # 🚨 CRITICAL FIX: Add max_age here too
@@ -166,3 +196,52 @@ def get_me(user: User = Depends(get_current_user)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
     return user
+
+
+@router.post(
+    "/switch-department",
+    response_model=SwitchDepartmentResponse,
+    status_code=status.HTTP_200_OK,
+)
+def switch_department(
+    payload: SwitchDepartmentRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_active:
+        raise HTTPException(status_code=403, detail="Inactive user")
+
+    mapping_service = DepartmentMappingService(db)
+    allowed_department_ids = mapping_service.user_allowed_department_ids(
+        clinic_id=current_user.clinic_id,
+        user_id=current_user.id,
+    )
+    if payload.department_id not in allowed_department_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Department access denied",
+        )
+
+    access_token = encode_access_token(
+        user_id=current_user.id,
+        role=UserRole(current_user.role),
+        clinic_id=current_user.clinic_id,
+        current_department_id=payload.department_id,
+        allowed_department_ids=allowed_department_ids,
+    )
+
+    response.set_cookie(
+        key=ACCESS_COOKIE,
+        value=access_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+    return SwitchDepartmentResponse(
+        detail="Department switched successfully",
+        current_department_id=payload.department_id,
+        allowed_department_ids=allowed_department_ids,
+    )

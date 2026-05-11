@@ -110,16 +110,20 @@ class BillingService:
         external_ref: str | None,
         actor,
     ) -> BillingLedgerEntry:
-        if reason_code not in {BillingReasonCode.CASH, BillingReasonCode.TRANSFER}:
+        if reason_code not in {
+            BillingReasonCode.CASH,
+            BillingReasonCode.TRANSFER,
+            BillingReasonCode.CARD,
+        }:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Only CASH or TRANSFER payment methods are supported",
+                detail="Only CASH, TRANSFER, or CARD payment methods are supported",
             )
-        if reason_code == BillingReasonCode.TRANSFER:
+        if reason_code in {BillingReasonCode.TRANSFER, BillingReasonCode.CARD}:
             if external_ref is None or len(external_ref.strip()) < 3:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail="Transfer reference is required for bank transfers",
+                    detail="Payment reference is required for transfer/card payments",
                 )
         patient = self._get_patient(patient_id, actor.clinic_id)
         clinic = self._get_clinic(actor.clinic_id)
