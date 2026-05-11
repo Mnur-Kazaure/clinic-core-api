@@ -9,3 +9,4 @@ pydantic
 email-validator
 python-dotenv
 pydantic-settings
+pytest

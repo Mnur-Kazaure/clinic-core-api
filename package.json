@@ -1,4 +1,12 @@
 {
+  "scripts": {
+    "env:sync": "./scripts/sync-local-env.sh",
+    "db:setup": "./scripts/setup-isolated-db.sh",
+    "db:reset": "./scripts/reset-isolated-db.sh",
+    "dev:backend": "./scripts/start-backend-isolated.sh",
+    "dev:frontend": "./scripts/start-frontend-isolated.sh",
+    "e2e:pharmacy-validation": "./scripts/e2e/run-pharmacy-validation.sh"
+  },
   "dependencies": {
     "@tanstack/react-query": "^5.90.16",
     "@tanstack/react-query-devtools": "^5.91.2",
