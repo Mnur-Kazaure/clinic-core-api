@@ -493,7 +493,7 @@ class PMRService:
         return active_admission is not None
 
     def _is_authorized(self, actor, identity_closure_ids: list[UUID]) -> bool:
-        if actor.role == UserRole.CLINIC_ADMIN:
+        if actor.role in {UserRole.CLINIC_ADMIN, UserRole.CMD}:
             return True
         if actor.role == UserRole.RECEPTION:
             # Reception/records officers may view PMR for any patient in their clinic (audit logged).

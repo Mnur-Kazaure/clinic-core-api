@@ -230,6 +230,15 @@ class BillingService:
             .all()
         )
 
+    def get_ledger_summary(self, clinic_id: UUID, limit: int = 100) -> list[BillingLedgerEntry]:
+        return (
+            self.db.query(BillingLedgerEntry)
+            .filter(BillingLedgerEntry.clinic_id == clinic_id)
+            .order_by(BillingLedgerEntry.occurred_at.desc())
+            .limit(limit)
+            .all()
+        )
+
     def _get_patient(self, patient_id: UUID, clinic_id: UUID) -> Patient:
         patient = (
             self.db.query(Patient)

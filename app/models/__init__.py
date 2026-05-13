@@ -48,3 +48,4 @@ from .diagnosis_condition_map import DiagnosisConditionMap
 from .chronic_recall import ChronicRecall
 from .follow_up import FollowUp
 from .follow_up_status_history import FollowUpStatusHistory
+from .attendance_log import AttendanceLog
