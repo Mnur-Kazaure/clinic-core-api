@@ -1,3 +1,4 @@
+from __future__ import annotations
 # app/schemas/cmd_oversight.py - CMD Intelligence Schemas
 
 from pydantic import BaseModel
@@ -34,6 +35,7 @@ class ActivityFeedItem(BaseModel):
     event_type: str
     actor_id: Optional[UUID]
     actor_role: str
+    patient_id: Optional[UUID]
     created_at: datetime
     payload: str
 
@@ -43,3 +45,20 @@ class StaffPerformanceItem(BaseModel):
     role: str
     punch_count: int
     clinical_action_count: int
+
+class VisitBrief(BaseModel):
+    id: UUID
+    started_at: datetime
+    service_line: str
+    status: str
+
+class PatientProfileResponse(BaseModel):
+    id: UUID
+    full_name: str
+    date_of_birth: str
+    gender: str
+    phone_number: Optional[str]
+    address: Optional[str]
+    total_visits: int
+    active_admission: bool
+    latest_visits: List[VisitBrief]

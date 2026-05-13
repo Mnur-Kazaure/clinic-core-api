@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models.base import Base
@@ -25,15 +25,14 @@ from app.shared.enums import (
     ClinicalPriorityLevel,
     ClinicalPrioritySource,
     BedAssignmentType,
-    WardType,
-    VisitStatus
+    WardType
 )
 
 DATABASE_URL = "sqlite:///clinic.db"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-from datetime import date, datetime, timedelta, timezone
+
 
 def seed_demo():
     db = SessionLocal()
@@ -146,6 +145,7 @@ def seed_demo():
             db.add(EventLog(
                 id=uuid.uuid4(), event_type="REGISTRATION", clinic_id=clinic.id, 
                 actor_id=cashier.id, actor_role="CASHIER", 
+                patient_id=p.id,
                 payload=f"Patient {p.full_name} registered for {v.service_line.value}"
             ))
 

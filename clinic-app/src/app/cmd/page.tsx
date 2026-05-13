@@ -4,13 +4,16 @@
 import { Card } from '@/shared/Card';
 import { useEffect, useState } from 'react';
 import client from '@/api/client';
+import { PatientModal } from './components/PatientModal';
 
 interface ActivityItem {
   id: string;
   event_type: string;
+  actor_id: string | null;
   actor_role: string;
-  payload: string;
+  patient_id: string | null;
   created_at: string;
+  payload: string;
 }
 
 export default function CmdPage() {
@@ -31,9 +34,13 @@ export default function CmdPage() {
     emergency_alerts_count: 0,
     pending_approvals_count: 0,
     suspicious_activities_count: 0,
+    long_waiting_count: 0,
+    delayed_consultations_count: 0,
+    doctor_workload_percent: 0
   });
   const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -54,6 +61,28 @@ export default function CmdPage() {
     const interval = setInterval(fetchData, 30000); // Refresh every 30s
     return () => clearInterval(interval);
   }, []);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const handleSearch = async (q: string) => {
+    setSearchQuery(q);
+    if (q.length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await client.get('/v1/cmd/search/patients', { params: { q } });
+      setSearchResults(res.data);
+    } catch (err) {
+      console.error('Search failed', err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
 
   const primaryMetrics = [
     {
@@ -109,49 +138,105 @@ export default function CmdPage() {
   }
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* Hero Executive Header */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">HOSPITAL COMMAND CENTER</h1>
-          <p className="mt-2 text-slate-500 font-medium max-w-xl">
-            Real-time operational intelligence and executive oversight for KSH EMR/HIS. 
-            All clinical and financial directives are active.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-sm transition-all">
-            EXPORT OPS REPORT
-          </button>
-          <button className="px-4 py-2 bg-[#0F172A] rounded-lg text-xs font-bold text-white hover:bg-slate-800 shadow-lg shadow-slate-200 transition-all">
-            EMERGENCY BROADCAST
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 pb-20">
+      {/* Premium Executive Banner */}
+      <div className="bg-[#0F172A] pt-12 pb-24 px-8 relative overflow-hidden">
+        {/* Abstract Background Accents */}
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-indigo-500/10 to-transparent pointer-events-none"></div>
+        <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-8 relative z-10">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="h-2 w-10 bg-indigo-500 rounded-full"></div>
+              <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em]">Institutional Oversight</span>
+            </div>
+            <h1 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">
+              Hospital <span className="text-indigo-400">Command</span> Center
+            </h1>
+            <p className="text-slate-400 text-sm font-medium max-w-md leading-relaxed">
+              Real-time clinical telemetry and operational intelligence for KSH Executive Management.
+            </p>
+          </div>
 
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+            <div className="relative w-full sm:w-80 group">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <svg className="h-4 w-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <input
+                type="text"
+                placeholder="PATIENT QUICK-LOOKUP..."
+                className="block w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white/10 backdrop-blur-md transition-all uppercase tracking-widest"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+              />
+              
+              {searchResults.length > 0 && (
+                <div className="absolute z-50 w-full mt-3 bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200 divide-y divide-slate-50">
+                  {searchResults.map((p) => (
+                    <button 
+                      key={p.id} 
+                      className="w-full text-left px-5 py-4 hover:bg-slate-50 flex items-center justify-between group/result transition-colors"
+                      onClick={() => {
+                        setSelectedPatientId(p.id);
+                        setSearchResults([]);
+                        setSearchQuery('');
+                      }}
+                    >
+                      <div>
+                        <p className="text-xs font-black text-slate-900 group-hover/result:text-indigo-600 uppercase tracking-tight">{p.full_name}</p>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">{p.gender} • {p.phone_number || 'NO CONTACT'}</p>
+                      </div>
+                      <svg className="w-4 h-4 text-slate-300 group-hover/result:text-indigo-500 transition-all transform group-hover/result:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 w-full sm:w-auto">
+              <button className="flex-1 sm:flex-none px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black rounded-2xl shadow-xl shadow-indigo-900/20 transition-all uppercase tracking-widest">
+                OPS Report
+              </button>
+              <button className="flex-1 sm:flex-none px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-black rounded-2xl shadow-xl shadow-rose-900/20 transition-all uppercase tracking-widest">
+                Emergency
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="max-w-7xl mx-auto px-8 -mt-12 space-y-8 relative z-20">
       {/* Primary Intelligence Grid */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {primaryMetrics.map((m) => (
-          <div key={m.label} className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm hover:shadow-md transition-all group">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-indigo-600 transition-colors">
+          <Card key={m.label} className="border-none shadow-xl shadow-slate-200/50 hover:translate-y-[-4px] transition-all duration-300 group">
+            <div className="flex justify-between items-start mb-4">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] group-hover:text-indigo-600 transition-colors">
                 {m.label}
               </span>
-              <div className={`h-2 w-2 rounded-full bg-${m.color}-500 animate-pulse`}></div>
+              <div className={`h-2 w-2 rounded-full bg-${m.color}-500 shadow-[0_0_8px_rgba(var(--${m.color}-500),0.5)] animate-pulse`}></div>
             </div>
-            <div className="mt-4 flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-900 tracking-tighter">{m.value}</span>
-              <span className="text-[10px] font-bold text-slate-400">{m.subValue}</span>
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="text-4xl font-black text-slate-900 tracking-tighter">{m.value}</span>
             </div>
-            <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between">
-              <span className={`text-[10px] font-bold ${m.trendUp && m.label !== 'Bed Occupancy' ? 'text-emerald-600' : m.label === 'Bed Occupancy' && m.trendUp ? 'text-rose-600' : 'text-slate-500'}`}>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mb-6">{m.subValue}</div>
+            
+            <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+              <span className={`text-[10px] font-black uppercase tracking-tighter ${m.trendUp && m.label !== 'Bed Occupancy' ? 'text-emerald-600' : m.label === 'Bed Occupancy' && m.trendUp ? 'text-rose-600' : 'text-slate-500'}`}>
                 {m.trend}
               </span>
-              <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
+              <div className="flex gap-1">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className={`h-1 w-3 rounded-full ${i <= 2 ? `bg-${m.color}-100` : 'bg-slate-50'}`}></div>
+                ))}
+              </div>
             </div>
-          </div>
+          </Card>
         ))}
       </section>
 
@@ -211,7 +296,11 @@ export default function CmdPage() {
                 <div className="px-6 py-12 text-center text-sm text-slate-400 italic">No recent activity logs available.</div>
               ) : (
                 activityFeed.map((feed, i) => (
-                  <div key={i} className="px-6 py-4 flex gap-4 items-start hover:bg-slate-50 transition-colors">
+                  <div 
+                    key={i} 
+                    className={`px-6 py-4 flex gap-4 items-start hover:bg-slate-50 transition-colors ${feed.patient_id ? 'cursor-pointer group/item' : ''}`}
+                    onClick={() => feed.patient_id && setSelectedPatientId(feed.patient_id)}
+                  >
                     <span className="text-[10px] font-mono font-bold text-slate-400 mt-0.5">
                       {new Date(feed.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -220,7 +309,9 @@ export default function CmdPage() {
                         <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${feed.event_type.includes('ERROR') || feed.event_type.includes('DENIED') ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
                           {feed.event_type}
                         </span>
-                        <p className={`text-sm font-medium ${feed.event_type.includes('ERROR') ? 'text-rose-900' : 'text-slate-800'}`}>{feed.payload}</p>
+                        <p className={`text-sm font-medium ${feed.event_type.includes('ERROR') ? 'text-rose-900' : 'text-slate-800'} ${feed.patient_id ? 'group-hover/item:text-indigo-600 underline decoration-indigo-200 decoration-2 underline-offset-4' : ''}`}>
+                          {feed.payload}
+                        </p>
                       </div>
                       <p className="mt-1 text-[10px] text-slate-400 font-medium italic">By {feed.actor_role}</p>
                     </div>
@@ -314,6 +405,14 @@ export default function CmdPage() {
           </section>
         </div>
       </div>
+    </div>
+
+      {selectedPatientId && (
+        <PatientModal 
+          patientId={selectedPatientId} 
+          onClose={() => setSelectedPatientId(null)} 
+        />
+      )}
     </div>
   );
 }

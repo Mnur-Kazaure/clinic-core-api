@@ -1,7 +1,8 @@
+from __future__ import annotations
 # app/services/cmd_oversight_service.py - CMD Executive Oversight Logic
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from app.models.billing_ledger_entry import BillingLedgerEntry
 from app.models.visit import Visit, VisitServiceLine, VisitStatus
 from app.models.attendance_log import AttendanceLog
@@ -261,3 +262,60 @@ class CMDOversightService:
                 "clinical_action_count": actions
             })
         return results
+
+    def get_patient_profile(self, clinic_id, patient_id):
+        patient = self.db.query(Patient).filter(
+            Patient.id == patient_id,
+            Patient.clinic_id == clinic_id
+        ).first()
+        
+        if not patient:
+            return None
+            
+        total_visits = self.db.query(Visit).filter(
+            Visit.patient_id == patient_id,
+            Visit.clinic_id == clinic_id
+        ).count()
+        
+        active_admission = self.db.query(Admission).filter(
+            Admission.patient_id == patient_id,
+            Admission.clinic_id == clinic_id,
+            Admission.status == AdmissionStatus.ACTIVE
+        ).first() is not None
+        
+        latest_visits_objs = self.db.query(Visit).filter(
+            Visit.patient_id == patient_id,
+            Visit.clinic_id == clinic_id
+        ).order_by(Visit.started_at.desc()).limit(5).all()
+        
+        latest_visits = []
+        for v in latest_visits_objs:
+            latest_visits.append({
+                "id": v.id,
+                "started_at": v.started_at,
+                "service_line": v.service_line.value,
+                "status": v.status.value
+            })
+            
+        return {
+            "id": patient.id,
+            "full_name": patient.full_name,
+            "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else "N/A",
+            "gender": patient.gender,
+            "phone_number": patient.phone_number,
+            "address": patient.address,
+            "total_visits": total_visits,
+            "active_admission": active_admission,
+            "latest_visits": latest_visits
+        }
+
+    def search_patients(self, clinic_id, q):
+        query = self.db.query(Patient).filter(Patient.clinic_id == clinic_id)
+        if q:
+            query = query.filter(
+                or_(
+                    Patient.full_name.ilike(f"%{q}%"),
+                    Patient.phone_number.ilike(f"%{q}%")
+                )
+            )
+        return query.limit(5).all()
