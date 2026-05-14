@@ -4,6 +4,8 @@ from . import (
     admin,
     admissions,
     anc,
+    attendance,
+    cmd_oversight,
     audit_review,
     auth,
     bed_board,
@@ -66,3 +68,5 @@ api_router.include_router(condition_profiles.router, tags=["condition_profiles"]
 api_router.include_router(diagnosis_mappings.router, tags=["diagnosis_mappings"])
 api_router.include_router(chronic_recalls.router, tags=["chronic_recalls"])
 api_router.include_router(follow_ups.router, tags=["follow_ups"])
+api_router.include_router(attendance.router, tags=["attendance"])
+api_router.include_router(cmd_oversight.router, tags=["cmd"])
