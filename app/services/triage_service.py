@@ -23,9 +23,9 @@ from app.shared.enums import (
 
 
 SERVICE_LINE_TRIAGE_ROLES: dict[VisitServiceLine, set[UserRole]] = {
-    VisitServiceLine.OPD: {UserRole.CHEW, UserRole.CMD},
-    VisitServiceLine.ANC: {UserRole.CHEW, UserRole.MIDWIFE, UserRole.CMD},
-    VisitServiceLine.MATERNITY: {UserRole.MIDWIFE, UserRole.CMD},
+    VisitServiceLine.OPD: {UserRole.CHEW},
+    VisitServiceLine.ANC: {UserRole.CHEW, UserRole.MIDWIFE},
+    VisitServiceLine.MATERNITY: {UserRole.MIDWIFE},
 }
 
 RESPIRATORY_SIGNAL_TOKENS = {
@@ -390,8 +390,6 @@ class TriageService:
         service_line: VisitServiceLine,
         is_doctor_fallback: bool,
     ) -> None:
-        if user.role == UserRole.CMD:
-            return
         allowed_roles = SERVICE_LINE_TRIAGE_ROLES.get(service_line, set())
         user_role = self._role_value(user.role)
         allowed_role_values = {role.value for role in allowed_roles}

@@ -13,14 +13,12 @@ VISIT_ACCESS_ROLES = {
     UserRole.CHEW,
     UserRole.MIDWIFE,
     UserRole.ADMIN,
-    UserRole.CMD,
 }
 
 TRIAGE_STAFF_ROLES = {
     UserRole.CHEW,
     UserRole.MIDWIFE,
     UserRole.DOCTOR,
-    UserRole.CMD,
 }
 
 
@@ -49,7 +47,7 @@ def require_triage_staff(user=Depends(get_current_user)):
 
 # Reception role required
 def require_reception(user=Depends(get_current_user)):
-    if user.role not in {UserRole.RECEPTION, UserRole.CMD}:
+    if user.role != UserRole.RECEPTION:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Reception access required",
@@ -60,7 +58,7 @@ def require_reception(user=Depends(get_current_user)):
 
 # Doctor role required
 def require_doctor(user=Depends(get_current_user)):
-    if user.role not in {UserRole.DOCTOR, UserRole.CMD}:
+    if user.role != UserRole.DOCTOR:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Doctor access required",
@@ -69,7 +67,7 @@ def require_doctor(user=Depends(get_current_user)):
 
 
 def require_chew(user=Depends(get_current_user)):
-    if user.role not in {UserRole.CHEW, UserRole.CMD}:
+    if user.role != UserRole.CHEW:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CHEW access required",
@@ -78,7 +76,7 @@ def require_chew(user=Depends(get_current_user)):
 
 
 def require_midwife(user=Depends(get_current_user)):
-    if user.role not in {UserRole.MIDWIFE, UserRole.CMD}:
+    if user.role != UserRole.MIDWIFE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Midwife access required",
@@ -88,7 +86,7 @@ def require_midwife(user=Depends(get_current_user)):
 
 # Clinic Admin role required
 def require_clinic_admin(user=Depends(get_current_user)):
-    if user.role not in {UserRole.CLINIC_ADMIN, UserRole.CMD}:
+    if user.role != UserRole.CLINIC_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Clinic Admin access required",

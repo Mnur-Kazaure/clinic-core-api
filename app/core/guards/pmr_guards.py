@@ -13,13 +13,11 @@ PMR_READ_ROLES = {
     UserRole.CHEW,
     UserRole.MIDWIFE,
     UserRole.CLINIC_ADMIN,
-    UserRole.CMD,
 }
 
 MRN_ISSUE_ROLES = {
     UserRole.RECEPTION,
     UserRole.CLINIC_ADMIN,
-    UserRole.CMD,
 }
 
 

@@ -123,19 +123,3 @@ def get_patient_ledger(
         patient_id=patient_id,
         clinic_id=current_user.clinic_id,
     )
-
-
-@router.get(
-    "/ledger/summary",
-    response_model=list[BillingLedgerEntryResponse],
-)
-def get_ledger_summary(
-    limit: int = 100,
-    db=Depends(get_db),
-    current_user=Depends(require_billing_read_role),
-):
-    service = BillingService(db)
-    return service.get_ledger_summary(
-        clinic_id=current_user.clinic_id,
-        limit=limit,
-    )

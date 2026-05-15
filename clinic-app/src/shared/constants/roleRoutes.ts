@@ -11,6 +11,5 @@ export const roleRoutes = {
   MIDWIFE: '/maternity',
   ADMIN: '/admin',
   CLINIC_ADMIN: '/admin',
-  CMD: '/cmd',
 } as const;
 
