@@ -19,6 +19,18 @@ const matrix = [
     role: 'Lab Tech',
     permissions: ['None', 'None', 'Full', 'None', 'None'],
   },
+  {
+    role: 'Pharmacy',
+    permissions: ['None', 'Write (Inventory)', 'None', 'None', 'None'],
+  },
+  {
+    role: 'Pharmacy HOD',
+    permissions: ['None', 'Governance', 'None', 'View', 'None'],
+  },
+  {
+    role: 'Pharmacy Store Officer',
+    permissions: ['None', 'Store Ops', 'None', 'None', 'None'],
+  },
 ];
 
 const columns = ['Patient', 'Pharmacy', 'Lab', 'Billing', 'Admin'];

@@ -8,6 +8,7 @@ import { authService } from '@/domains/auth/services/authService';
 
 const tabs = [
   { label: 'Clinic Admin', href: '/admin' },
+  { label: 'Service Lines', href: '/admin/service-lines' },
   { label: 'Analytics', href: '/admin/analytics' },
   { label: 'Payments', href: '/admin/payments' },
   { label: 'Reports', href: '/admin/reports' },

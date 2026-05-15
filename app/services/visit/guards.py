@@ -1,6 +1,6 @@
 # app/services/visit/guards.py
 
-from app.shared.enums import VisitStatus, UserRole, PrescriptionStatus
+from app.shared.enums import LAB_OPERATION_ROLES, PrescriptionStatus, VisitStatus, UserRole
 from app.models.visit import Visit
 from app.models.lab_request import LabRequest
 from app.models.prescription import Prescription
@@ -19,6 +19,9 @@ def _normalize_role(role) -> UserRole:
 
 ALLOWED_TRANSITIONS = {
     VisitStatus.REGISTERED: [
+        # Contract update: clinical owner can start consultation directly
+        # from REGISTERED when triage is intentionally bypassed.
+        VisitStatus.IN_CONSULTATION,
         VisitStatus.TRIAGED,
         VisitStatus.CANCELLED,
     ],
@@ -71,14 +74,14 @@ ROLE_TRANSITION_MATRIX = {
         VisitStatus.PHARMACY_PENDING,
         VisitStatus.COMPLETED,
     ],
-    UserRole.LAB: [
-        VisitStatus.LAB_COMPLETED,
-    ],
-    UserRole.PHARMACY: [
+    UserRole.PHARMACY_HOD: [
         VisitStatus.COMPLETED,
     ],
     UserRole.ADMIN: list(VisitStatus),
 }
+
+for _lab_role in LAB_OPERATION_ROLES:
+    ROLE_TRANSITION_MATRIX[_lab_role] = [VisitStatus.LAB_COMPLETED]
 
 
 def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):

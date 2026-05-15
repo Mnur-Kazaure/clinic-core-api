@@ -21,15 +21,20 @@ export interface StaffCreateRequest {
   email: string;
   password: string;
   role: UserRole;
+  allowed_lab_unit_ids?: string[];
+  default_lab_unit_id?: string | null;
 }
 
 export interface StaffUpdateRequest {
   full_name?: string | null;
+  role?: UserRole;
   is_active?: boolean;
   specialty?: string | null;
   department?: string | null;
   room_label?: string | null;
   availability_status?: string | null;
+  allowed_lab_unit_ids?: string[];
+  default_lab_unit_id?: string | null;
 }
 
 export const clinicService = {

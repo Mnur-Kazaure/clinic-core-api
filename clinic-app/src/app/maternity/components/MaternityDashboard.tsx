@@ -22,8 +22,15 @@ import { MaternityHandoverPanel } from '@/app/maternity/components/MaternityHand
 import { DeliveryRecordPanel } from '@/app/maternity/components/DeliveryRecordPanel';
 import { PostnatalNotesPanel } from '@/app/maternity/components/PostnatalNotesPanel';
 import { FamilyPlanningPanel } from '@/app/maternity/components/FamilyPlanningPanel';
+import { DashboardHero } from '@/app/components/DashboardHero';
+import {
+  getDashboardUserDisplayName,
+  useDashboardUser,
+} from '@/app/components/DashboardUserContext';
+import { HOSPITAL_NAME } from '@/shared/constants/branding';
 
 export function MaternityDashboard() {
+  const dashboardUser = useDashboardUser();
   const [queue, setQueue] = useState<VisitResponse[]>([]);
   const [loadingQueue, setLoadingQueue] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -247,14 +254,21 @@ export function MaternityDashboard() {
 
   return (
     <div className="space-y-4">
-      <header className="rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-emerald-50/40 to-blue-50/30 px-4 py-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Maternity Care Workspace</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Delivery, postnatal care, and family planning documentation in one workflow.
-            </p>
-          </div>
+      <DashboardHero
+        title="Maternity Care Workspace"
+        subtitle={HOSPITAL_NAME}
+        workspaceLabel="Delivery, postnatal care, and family planning documentation"
+        monogram="K"
+        rightSlot={
+          <>
+            <div>
+              <span className="font-semibold">Midwife:</span>{' '}
+              {getDashboardUserDisplayName(dashboardUser)}
+            </div>
+            <div>Maternity Workflow Active</div>
+          </>
+        }
+        actionsSlot={
           <Button
             size="sm"
             variant="secondary"
@@ -265,8 +279,8 @@ export function MaternityDashboard() {
           >
             {loadingQueue ? 'Refreshing…' : 'Refresh queue'}
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_1fr]">
         <MaternityQueuePanel

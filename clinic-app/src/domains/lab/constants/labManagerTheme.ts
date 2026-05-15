@@ -1,0 +1,15 @@
+export const LAB_MANAGER_THEME = {
+  sidebarBackground: '#1E4B8C',
+  sidebarText: '#EAF2FF',
+  sidebarMutedText: 'rgba(234,242,255,0.78)',
+  sidebarHover: 'rgba(255,255,255,0.08)',
+  sidebarActiveGradient: 'linear-gradient(135deg, #1E4B8C 0%, #3FA3CF 100%)',
+  sidebarActiveIndicator: '#3FA3CF',
+  sidebarActiveShadow: '0 18px 30px rgba(30, 75, 140, 0.28)',
+  headerBackground: '#FEFEFE',
+  headerBorder: '#E2E8F0',
+  headerText: '#0F172A',
+  headerMutedText: '#5A666D',
+  accentSoft: 'rgba(63,163,207,0.14)',
+  accentStrong: '#3FA3CF',
+} as const;

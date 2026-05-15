@@ -1,5 +1,6 @@
 // /projects/clinic-monorepo/clinic-app/src/domains/auth/services/roleSessionService.ts
 import client from '@/api/client';
+import { setActiveDepartmentId } from '@/api/client';
 import { UserDTO } from '@/shared/types';
 
 export const roleSessionService = {
@@ -23,6 +24,8 @@ export const roleSessionService = {
     if (!user?.id || !user?.role || !user?.clinic_id) {
       throw new Error('Invalid user data received from server');
     }
+
+    setActiveDepartmentId(user.current_department_id ?? null);
 
     return user;
   },

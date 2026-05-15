@@ -65,13 +65,15 @@ export function ClinicProfileForm() {
       setError(null);
       setSuccess(null);
       const payload: ClinicProfileUpdateRequest = {};
-      const setIf = (
-        key: keyof ClinicProfileUpdateRequest,
-        value: ClinicProfileUpdateRequest[keyof ClinicProfileUpdateRequest]
+      const setIf = <K extends keyof ClinicProfileUpdateRequest>(
+        key: K,
+        value: ClinicProfileUpdateRequest[K]
       ) => {
         if (value === undefined || value === null) return;
         if (typeof value === 'string' && value.trim() === '') return;
-        payload[key] = typeof value === 'string' ? value.trim() : value;
+        const normalized =
+          typeof value === 'string' ? value.trim() : value;
+        payload[key] = normalized as ClinicProfileUpdateRequest[K];
       };
 
       setIf('name', formState.name);

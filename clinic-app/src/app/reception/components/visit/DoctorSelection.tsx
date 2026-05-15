@@ -10,8 +10,11 @@ interface DoctorSelectionProps {
   onSelectDoctor?: (doctor: Doctor | null) => void;
   disabled?: boolean;
   error?: string;
-  role?: UserRole;
+  role?: UserRole | null;
   label?: string;
+  serviceLineId?: string;
+  includeAllDepartments?: boolean;
+  departmentId?: string | null;
 }
 
 export function DoctorSelection({
@@ -20,8 +23,11 @@ export function DoctorSelection({
   onSelectDoctor,
   disabled = false,
   error,
-  role = UserRole.DOCTOR,
-  label = 'Assign Doctor *',
+  role = null,
+  label = 'Assign Clinician',
+  serviceLineId,
+  includeAllDepartments = false,
+  departmentId = null,
 }: DoctorSelectionProps) {
   const [staff, setStaff] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,9 +38,14 @@ export function DoctorSelection({
       try {
         setLoading(true);
         setLoadError(null);
-        const data = await userService.listAssignableStaff();
+        const data = await userService.listAssignableStaff({
+          ...(serviceLineId ? { service_line_id: serviceLineId } : {}),
+          ...(role ? { role } : {}),
+          include_all_departments: includeAllDepartments,
+          ...(departmentId ? { department_id: departmentId } : {}),
+        });
         setStaff(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to load assignable staff:', err);
         setLoadError('Unable to load assignable staff. Please try again.');
       } finally {
@@ -43,16 +54,28 @@ export function DoctorSelection({
     }
 
     loadAssignableStaff();
-  }, []);
+  }, [serviceLineId, role, includeAllDepartments, departmentId]);
 
-  const roleKey = role;
-  const filteredStaff = staff.filter((member) => member.role === roleKey);
+  const filteredStaff = role
+    ? staff.filter((member) => member.role === role)
+    : staff;
   const roleLabel =
     role === UserRole.CHEW
       ? 'CHEW'
       : role === UserRole.MIDWIFE
       ? 'midwife'
-      : 'doctor';
+      : role === UserRole.DOCTOR
+      ? 'doctor'
+      : 'clinician';
+
+  useEffect(() => {
+    if (!value) return;
+    const stillAvailable = filteredStaff.some((member) => member.id === value);
+    if (!stillAvailable) {
+      onChange('');
+      onSelectDoctor?.(null);
+    }
+  }, [filteredStaff, value, onChange, onSelectDoctor]);
 
   if (loading) {
     return (

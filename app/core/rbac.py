@@ -1,6 +1,6 @@
 # app/core/rbac.py
 from fastapi import Depends, HTTPException, status
-from app.shared.enums import UserRole
+from app.shared.enums import LAB_OPERATION_ROLES, UserRole
 from app.core.auth import get_current_user
 
 
@@ -8,12 +8,11 @@ from app.core.auth import get_current_user
 VISIT_ACCESS_ROLES = {
     UserRole.RECEPTION,
     UserRole.DOCTOR,
-    UserRole.LAB,
-    UserRole.PHARMACY,
+    UserRole.PHARMACY_HOD,
     UserRole.CHEW,
     UserRole.MIDWIFE,
     UserRole.ADMIN,
-}
+} | set(LAB_OPERATION_ROLES)
 
 TRIAGE_STAFF_ROLES = {
     UserRole.CHEW,

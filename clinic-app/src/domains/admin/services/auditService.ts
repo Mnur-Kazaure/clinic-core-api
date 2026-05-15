@@ -4,6 +4,7 @@ export interface AuditTimelineItem {
   id: string;
   source: 'EVENT' | 'ACCESS';
   event_type: string;
+  event_payload?: Record<string, unknown> | null;
   actor_id?: string | null;
   actor_role: string;
   clinic_id: string;

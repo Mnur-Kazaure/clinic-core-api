@@ -3,13 +3,17 @@
 import { useEffect, useState } from 'react';
 import { pharmacyService } from '@/domains/pharmacy/services/pharmacyService';
 import { PrescriptionResponse } from '@/shared/types';
-import { PrescriptionFulfillmentType, PrescriptionStatus } from '@/shared/enums';
+import {
+  PharmacyPrescriptionWorkflowStatus,
+  PrescriptionFulfillmentType,
+} from '@/shared/enums';
 import { Card } from '@/shared/Card';
 import { Button } from '@/shared/Button';
 
-type PrescriptionFilter = PrescriptionStatus | 'ALL';
+type PrescriptionFilter = PharmacyPrescriptionWorkflowStatus | 'ALL';
 
 interface PharmacyQueueProps {
+  unitId?: string | null;
   onSelectPrescription?: (prescription: PrescriptionResponse) => void;
   onDispensePrescription?: (prescription: PrescriptionResponse) => void;
   autoRefresh?: boolean;
@@ -17,6 +21,7 @@ interface PharmacyQueueProps {
 }
 
 export function PharmacyQueue({
+  unitId,
   onSelectPrescription,
   onDispensePrescription,
   autoRefresh = true,
@@ -25,8 +30,9 @@ export function PharmacyQueue({
   const [prescriptions, setPrescriptions] = useState<PrescriptionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] =
-    useState<PrescriptionFilter>(PrescriptionStatus.ISSUED);
+  const [statusFilter, setStatusFilter] = useState<PrescriptionFilter>(
+    PharmacyPrescriptionWorkflowStatus.AWAITING_PAYMENT_CLEARANCE
+  );
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const maskId = (value?: string | null) =>
@@ -43,31 +49,36 @@ export function PharmacyQueue({
     try {
       setLoading(true);
       setError(null);
-      const statusParam = statusFilter === 'ALL' ? undefined : statusFilter;
-      const data = await pharmacyService.getPrescriptions(statusParam);
+      if (!unitId) {
+        setPrescriptions([]);
+        setLastUpdated(new Date());
+        return;
+      }
+      const data = await pharmacyService.getPrescriptions({
+        workflow_status: statusFilter === 'ALL' ? undefined : statusFilter,
+        unit_id: unitId,
+      });
       setPrescriptions(data);
       setLastUpdated(new Date());
     } catch (err: any) {
       console.error('Failed to load prescriptions:', err);
-      setError('Unable to load prescriptions. Please try again.');
+      setError('Unable to load assigned prescriptions. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadPrescriptions();
-  }, []);
+    void loadPrescriptions();
+  }, [unitId, statusFilter]);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(loadPrescriptions, refreshInterval);
+    const interval = setInterval(() => {
+      void loadPrescriptions();
+    }, refreshInterval);
     return () => clearInterval(interval);
-  }, [autoRefresh, refreshInterval, statusFilter]);
-
-  useEffect(() => {
-    loadPrescriptions();
-  }, [statusFilter]);
+  }, [autoRefresh, refreshInterval, unitId, statusFilter]);
 
   const getTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -86,24 +97,40 @@ export function PharmacyQueue({
   };
 
   const getStatusBadge = (prescription: PrescriptionResponse) => {
-    const status = prescription.status;
+    const status = prescription.workflow_status;
     const config =
       {
-        ISSUED: { color: 'bg-yellow-100 text-yellow-800', label: 'Issued' },
+        ASSIGNED: { color: 'bg-sky-100 text-sky-800', label: 'Assigned' },
+        AWAITING_PAYMENT_CLEARANCE: {
+          color: 'bg-amber-100 text-amber-800',
+          label: 'Awaiting Payment Clearance',
+        },
+        READY_TO_DISPENSE: {
+          color: 'bg-emerald-100 text-emerald-800',
+          label: 'Ready to Dispense',
+        },
+        PARTIALLY_DISPENSED: {
+          color: 'bg-amber-100 text-amber-800',
+          label: 'Partially Dispensed',
+        },
+        IN_DISPENSE: { color: 'bg-blue-100 text-blue-800', label: 'In Dispense' },
         DISPENSED: { color: 'bg-green-100 text-green-800', label: 'Dispensed' },
+        REASSIGNED: { color: 'bg-violet-100 text-violet-800', label: 'Reassigned' },
         CANCELLED: { color: 'bg-red-100 text-red-800', label: 'Cancelled' },
-      }[status] || { color: 'bg-gray-100 text-gray-800', label: status };
+        EXTERNALLY_FULFILLED: {
+          color: 'bg-slate-100 text-slate-800',
+          label: 'Externally Fulfilled',
+        },
+      }[status] || { color: 'bg-gray-100 text-gray-800', label: String(status) };
 
     const label =
-      status === PrescriptionStatus.DISPENSED &&
-      prescription.fulfillment_type ===
-        PrescriptionFulfillmentType.DISPENSED_EXTERNAL
-        ? 'Dispensed (External)'
+      prescription.fulfillment_type === PrescriptionFulfillmentType.DISPENSED_EXTERNAL
+        ? 'Externally Fulfilled'
         : config.label;
 
     return (
       <span
-        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.color}`}
+        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${config.color}`}
       >
         {label}
       </span>
@@ -112,12 +139,12 @@ export function PharmacyQueue({
 
   if (loading && prescriptions.length === 0) {
     return (
-      <Card title="Prescription Queue" titleClassName="text-[#0B4DA2]">
+      <Card title="Assigned Prescriptions" titleClassName="text-[#0B4DA2]">
         <div className="space-y-4">
-          <div className="animate-pulse h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-8 w-1/3 animate-pulse rounded bg-gray-200" />
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse h-20 bg-gray-200 rounded"></div>
+              <div key={i} className="h-20 animate-pulse rounded bg-gray-200" />
             ))}
           </div>
         </div>
@@ -125,31 +152,35 @@ export function PharmacyQueue({
     );
   }
 
-  const filteredPrescriptions = prescriptions.filter(
-    (prescription) => statusFilter === 'ALL' || prescription.status === statusFilter
-  );
-
   return (
-    <Card title="Prescription Queue" titleClassName="text-[#0B4DA2]">
+    <Card title="Assigned Prescriptions" titleClassName="text-[#0B4DA2]">
       <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div className="flex items-center space-x-2">
             <select
               value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as PrescriptionFilter)
-              }
-              className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setStatusFilter(e.target.value as PrescriptionFilter)}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value={PrescriptionStatus.ISSUED}>Issued</option>
-              <option value={PrescriptionStatus.DISPENSED}>Dispensed</option>
-              <option value={PrescriptionStatus.CANCELLED}>Cancelled</option>
+              <option value={PharmacyPrescriptionWorkflowStatus.AWAITING_PAYMENT_CLEARANCE}>
+                Awaiting Payment Clearance
+              </option>
+              <option value={PharmacyPrescriptionWorkflowStatus.READY_TO_DISPENSE}>
+                Ready to Dispense
+              </option>
+              <option value={PharmacyPrescriptionWorkflowStatus.PARTIALLY_DISPENSED}>
+                Partially Dispensed
+              </option>
+              <option value={PharmacyPrescriptionWorkflowStatus.DISPENSED}>Dispensed</option>
+              <option value={PharmacyPrescriptionWorkflowStatus.EXTERNALLY_FULFILLED}>
+                Externally Fulfilled
+              </option>
+              <option value={PharmacyPrescriptionWorkflowStatus.CANCELLED}>Cancelled</option>
               <option value="ALL">All</option>
             </select>
 
             <div className="text-sm text-gray-500">
-              {filteredPrescriptions.length} prescription
-              {filteredPrescriptions.length !== 1 ? 's' : ''}
+              {prescriptions.length} prescription{prescriptions.length !== 1 ? 's' : ''}
             </div>
           </div>
 
@@ -162,7 +193,7 @@ export function PharmacyQueue({
             <Button
               size="sm"
               variant="secondary"
-              onClick={loadPrescriptions}
+              onClick={() => void loadPrescriptions()}
               disabled={loading}
             >
               {loading ? 'Refreshing...' : 'Refresh'}
@@ -171,7 +202,7 @@ export function PharmacyQueue({
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+          <div className="rounded-md border border-red-200 bg-red-50 p-4">
             <div className="flex">
               <div className="flex-shrink-0">
                 <span className="text-red-400">⚠</span>
@@ -179,7 +210,7 @@ export function PharmacyQueue({
               <div className="ml-3">
                 <p className="text-sm text-red-600">{error}</p>
                 <button
-                  onClick={loadPrescriptions}
+                  onClick={() => void loadPrescriptions()}
                   className="mt-2 text-sm font-medium text-red-700 hover:text-red-800"
                 >
                   Try again
@@ -189,32 +220,32 @@ export function PharmacyQueue({
           </div>
         )}
 
-        {!error && filteredPrescriptions.length === 0 && (
-          <div className="text-center py-8">
-            <div className="text-gray-400 mb-2">💊</div>
+        {!error && prescriptions.length === 0 && (
+          <div className="py-8 text-center">
+            <div className="mb-2 text-gray-400">💊</div>
             <p className="text-gray-500">
-              {statusFilter === PrescriptionStatus.ISSUED
-                ? 'No issued prescriptions'
-                : `No ${statusFilter.toLowerCase()} prescriptions`}
+              {unitId
+                ? `No ${statusFilter === 'ALL' ? 'assigned' : statusFilter.toLowerCase().replaceAll('_', ' ')} prescriptions`
+                : 'Select an assigned dispensing unit to view prescriptions'}
             </p>
           </div>
         )}
 
-        {!error && filteredPrescriptions.length > 0 && (
-          <div className="border rounded-lg divide-y">
-            {filteredPrescriptions.map((prescription) => (
+        {!error && prescriptions.length > 0 && (
+          <div className="divide-y rounded-lg border">
+            {prescriptions.map((prescription) => (
               <div
                 key={prescription.id}
-                className={`p-4 hover:bg-gray-50 transition-colors ${
+                className={`p-4 transition-colors hover:bg-gray-50 ${
                   onSelectPrescription ? 'cursor-pointer' : ''
                 }`}
                 onClick={() =>
                   onSelectPrescription && onSelectPrescription(prescription)
                 }
               >
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
+                    <div className="mb-2 flex items-center space-x-3">
                       {getStatusBadge(prescription)}
                       <span className="text-sm font-medium text-gray-900">
                         {prescription.drug_name}
@@ -231,7 +262,7 @@ export function PharmacyQueue({
                       </span>
                     </div>
 
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="mt-1 text-xs text-gray-500">
                       Prescribed by{' '}
                       {prescription.prescribed_by_name ||
                         maskId(prescription.prescribed_by)}
@@ -240,12 +271,33 @@ export function PharmacyQueue({
                         : ''}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div className="mt-3 grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
+                      <div>
+                        <span className="text-gray-600">Payment:</span>
+                        <p className="font-medium text-gray-900">
+                          {prescription.payment_cleared
+                            ? 'Cleared'
+                            : 'Awaiting cashier clearance'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Dispensing Unit:</span>
+                        <p className="font-medium text-gray-900">
+                          {prescription.assigned_dispensing_unit_name || 'Unassigned'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Cashier Pay Point:</span>
+                        <p className="font-medium text-gray-900">
+                          {prescription.assigned_cashier_pay_point_name || 'Unassigned'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
                       <div>
                         <span className="text-gray-600">Dosage:</span>
-                        <p className="font-medium text-gray-900">
-                          {prescription.dosage}
-                        </p>
+                        <p className="font-medium text-gray-900">{prescription.dosage}</p>
                       </div>
                       <div>
                         <span className="text-gray-600">Frequency:</span>
@@ -269,25 +321,32 @@ export function PharmacyQueue({
                     </div>
                   </div>
 
-                  {onSelectPrescription &&
-                    prescription.status === PrescriptionStatus.ISSUED && (
-                      <div className="ml-4">
+                  <div className="ml-4 flex flex-col gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectPrescription && onSelectPrescription(prescription);
+                      }}
+                    >
+                      View
+                    </Button>
+                    {onDispensePrescription &&
+                      prescription.workflow_status ===
+                        PharmacyPrescriptionWorkflowStatus.READY_TO_DISPENSE && (
                         <Button
                           size="sm"
                           variant="primary"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (onDispensePrescription) {
-                              onDispensePrescription(prescription);
-                              return;
-                            }
-                            onSelectPrescription(prescription);
+                            onDispensePrescription(prescription);
                           }}
                         >
                           Dispense
                         </Button>
-                      </div>
-                    )}
+                      )}
+                  </div>
                 </div>
               </div>
             ))}

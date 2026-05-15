@@ -170,6 +170,8 @@ export interface OccupiedBedItem {
   patient_name?: string | null;
   patient_mrn?: string | null;
   assigned_at: string;
+  review_due?: boolean;
+  chronic_due?: boolean;
 }
 
 export interface OccupiedBedSearchResponse {
@@ -183,6 +185,8 @@ export interface OccupiedBedDetailResponse {
   patient_id: string;
   patient_name?: string | null;
   patient_mrn?: string | null;
+  review_due?: boolean;
+  chronic_due?: boolean;
   ward_name?: string | null;
   bed_label?: string | null;
   assigned_at?: string | null;

@@ -6,6 +6,8 @@ from app.models.patient import Patient
 from app.models.visit import Visit
 from app.models.consultation import Consultation
 from app.models.lab_request import LabRequest
+from app.models.lab_specimen import LabSpecimen
+from app.models.service_line import ServiceLine
 from app.models.user import User
 from app.services.visit.service import VisitService
 from app.services.consultation_service import ConsultationService
@@ -16,6 +18,7 @@ from app.shared.enums import (
     LabRequestStatus,
     RecordStatus,
     Gender,
+    LabSpecimenStatus,
     UserRole,
 )
 from app.schemas.lab import LabResultCreate
@@ -114,6 +117,18 @@ def test_lab_post_emits_event(db, clinic_id):
     lab_user = _seed_clinic_user(db, clinic_id, UserRole.LAB, "lab@event.test")
     doctor = _seed_clinic_user(db, clinic_id, UserRole.DOCTOR, "doc3@event.test")
     _, visit = _seed_patient_visit(db, clinic_id, doctor.id)
+    unit = ServiceLine(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        name="Event Lab Unit",
+        parent_id=None,
+        department_id=None,
+        default_child_id=None,
+        requires_doctor=False,
+        is_active=True,
+    )
+    db.add(unit)
+    db.commit()
 
     lab_request = LabRequest(
         id=uuid.uuid4(),
@@ -121,18 +136,39 @@ def test_lab_post_emits_event(db, clinic_id):
         clinic_id=clinic_id,
         requested_by=doctor.id,
         test_name="CBC",
+        target_unit_id=unit.id,
         status=LabRequestStatus.PENDING,
     )
     db.add(lab_request)
+    db.commit()
+
+    specimen = LabSpecimen(
+        id=uuid.uuid4(),
+        clinic_id=clinic_id,
+        accession_number=f"LAB-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{clinic_id.hex[:5].upper()}",
+        request_item_id=lab_request.id,
+        target_unit_id=unit.id,
+        specimen_type="Blood",
+        specimen_source="blood",
+        status=LabSpecimenStatus.RECEIVED,
+        collected_by=lab_user.id,
+        collected_at=datetime.now(timezone.utc),
+        received_by=lab_user.id,
+        received_at=datetime.now(timezone.utc),
+    )
+    db.add(specimen)
     db.commit()
 
     payload = LabResultCreate(
         result_value="Normal",
         result_unit="mg",
         reference_range="10-20",
+    )
+    LabService(db).record_result(
+        lab_request.id,
+        payload,
         technician_id=lab_user.id,
     )
-    LabService(db).record_result(lab_request.id, payload)
 
     assert (
         db.query(EventLog)

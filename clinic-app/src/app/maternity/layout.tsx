@@ -8,6 +8,7 @@ import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { clinicService } from '@/domains/clinic/services/clinicService';
 import { UserDTO } from '@/shared/types';
 import { Header } from '../components/Header';
+import { DashboardUserProvider } from '@/app/components/DashboardUserContext';
 
 export default function MaternityLayout({
   children,
@@ -74,14 +75,13 @@ export default function MaternityLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {user && (
-        <Header userRole={user.role} userName={user.full_name} clinicName={clinicName} />
-      )}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
-    </div>
+    <DashboardUserProvider user={user}>
+      <div className="min-h-screen bg-gray-50">
+        {user && <Header userRole={user.role} clinicName={clinicName} />}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {children}
+        </main>
+      </div>
+    </DashboardUserProvider>
   );
 }
-

@@ -5,7 +5,7 @@ from uuid import UUID
 from app.core.dependencies import get_db
 from app.core.auth import get_current_user
 from app.models.prescription import Prescription
-from app.models.dispensation import Dispensation
+from app.models.pharmacy_user_unit_access import PharmacyUserUnitAccess
 from app.models.prescription_fulfillment_event import PrescriptionFulfillmentEvent
 from app.models.visit import Visit
 from app.shared.enums import UserRole, PrescriptionStatus, VisitStatus
@@ -34,7 +34,11 @@ def require_pharmacy_for_dispense(
             detail="Prescription not found",
         )
 
-    if prescription.status != PrescriptionStatus.ISSUED:
+    if prescription.status in {
+        PrescriptionStatus.DISPENSED,
+        PrescriptionStatus.CANCELLED,
+        PrescriptionStatus.EXTERNALLY_FULFILLED,
+    }:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Prescription is not available for dispensing",
@@ -49,17 +53,6 @@ def require_pharmacy_for_dispense(
         .first()
     )
     if existing_fulfillment:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Prescription already dispensed",
-        )
-
-    existing = (
-        db.query(Dispensation)
-        .filter(Dispensation.prescription_id == prescription.id)
-        .first()
-    )
-    if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Prescription already dispensed",
@@ -82,6 +75,22 @@ def require_pharmacy_for_dispense(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cross-clinic access denied",
         )
+
+    if prescription.assigned_dispensing_unit_id is not None:
+        allowed = (
+            db.query(PharmacyUserUnitAccess.id)
+            .filter(
+                PharmacyUserUnitAccess.user_id == current_user.id,
+                PharmacyUserUnitAccess.service_line_id == prescription.assigned_dispensing_unit_id,
+                PharmacyUserUnitAccess.is_active == True,
+            )
+            .first()
+        )
+        if allowed is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Prescription is assigned to a different dispensing unit",
+            )
 
     # Flexible workflow: pharmacy dispensing is allowed even if the visit is completed,
     # as long as the visit is not cancelled.

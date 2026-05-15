@@ -79,7 +79,7 @@ def require_doctor_for_prescription(
 
 
 # -------------------------------------------------
-# Read Access — Doctor / Pharmacy / Admin
+# Read Access — Doctor / Pharmacy / Pharmacy HOD / Pharmacy Store / Admin
 # -------------------------------------------------
 
 def require_prescription_read_access(
@@ -102,7 +102,10 @@ def require_prescription_read_access(
     if current_user.role == UserRole.ADMIN:
         return prescription
 
-    if current_user.role == UserRole.PHARMACY:
+    if current_user.role in {
+        UserRole.PHARMACY,
+        UserRole.PHARMACY_HOD,
+    }:
         return prescription
 
     if current_user.role == UserRole.DOCTOR:

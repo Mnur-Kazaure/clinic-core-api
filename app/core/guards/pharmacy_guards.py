@@ -17,6 +17,18 @@ def require_pharmacy_user(user=Depends(get_current_user)):
     return user
 
 
+def require_pharmacy_inventory_user(user=Depends(get_current_user)):
+    if user.role not in {
+        UserRole.PHARMACY_HOD,
+        UserRole.PHARMACY_STORE_OFFICER,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Pharmacy inventory access required",
+        )
+    return user
+
+
 def require_pharmacy_access(
     visit_id: UUID,
     db=Depends(get_db),
@@ -26,7 +38,7 @@ def require_pharmacy_access(
     if current_user.role != UserRole.PHARMACY:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only pharmacy staff may access pharmacy module",
+            detail="Only pharmacy users may access prescription operations",
         )
 
     visit = (

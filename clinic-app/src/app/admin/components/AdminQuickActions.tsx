@@ -6,6 +6,7 @@ import { Card } from '@/shared/Card';
 const actions = [
   { label: 'Clinic Profile', href: '/admin#clinic-profile' },
   { label: 'Staff Directory', href: '/admin#staff-directory' },
+  { label: 'Service Lines', href: '/admin/service-lines' },
   { label: 'Payments', href: '/admin/payments' },
   { label: 'Settings', href: '/admin/settings' },
   { label: 'Audit Trail', href: '/admin/audit' },

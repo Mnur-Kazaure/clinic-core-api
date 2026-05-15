@@ -7,6 +7,7 @@ import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { UserDTO } from '@/shared/types';
 import { Header } from '../components/Header';
+import { DashboardUserProvider } from '@/app/components/DashboardUserContext';
 import { clinicService } from '@/domains/clinic/services/clinicService';
 
 export default function DoctorLayout({
@@ -73,17 +74,13 @@ export default function DoctorLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {user && (
-        <Header
-          userRole={user.role}
-          userName={user.full_name}
-          clinicName={clinicName}
-        />
-      )}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
-    </div>
+    <DashboardUserProvider user={user}>
+      <div className="min-h-screen bg-gray-50">
+        {user && <Header userRole={user.role} clinicName={clinicName} />}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {children}
+        </main>
+      </div>
+    </DashboardUserProvider>
   );
 }

@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+import app.models  # noqa: F401
 from app.models.base import Base
 from app.shared.enums import UserRole, VisitStatus
 from app.models.user import User

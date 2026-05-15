@@ -9,12 +9,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.clinical_priority_event import ClinicalPriorityEvent
+from app.models.doctor_service_line import DoctorServiceLine
 from app.models.triage_assessment import TriageAssessment
+from app.models.user import User
 from app.models.visit import Visit
 from app.models.visit_status_history import VisitStatusHistory
 from app.services.visit.guards import guard_can_transition
 from app.core.guards.patient_guards import ensure_patient_in_clinic
 from app.core.guards.user_guards import ensure_owner_for_service_line
+from app.services.service_line_service import ServiceLineService
 from app.shared.enums import (
     VisitStatus,
     AdmissionStatus,
@@ -58,16 +61,36 @@ class VisitService:
                 payload.patient_id,
                 current_user.clinic_id,
             )
-            ensure_owner_for_service_line(
-                self.db,
-                payload.assigned_doctor_id,
-                current_user.clinic_id,
-                payload.service_line,
-            )
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
+            )
+
+        (
+            resolved_service_line,
+            resolved_service_line_id,
+            requires_doctor,
+            service_line_department_id,
+        ) = self._resolve_visit_service_line(payload=payload, current_user=current_user)
+
+        self._validate_department_scope(
+            current_user=current_user,
+            service_line_department_id=service_line_department_id,
+        )
+
+        if requires_doctor and payload.assigned_doctor_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="assigned_doctor_id is required for selected service line",
+            )
+
+        if payload.assigned_doctor_id is not None:
+            self._validate_owner_for_service_line(
+                clinic_id=current_user.clinic_id,
+                assigned_owner_id=payload.assigned_doctor_id,
+                service_line=resolved_service_line,
+                service_line_id=resolved_service_line_id,
             )
 
         # 🔒 Prevent multiple active visits for same patient
@@ -94,7 +117,9 @@ class VisitService:
             patient_id=payload.patient_id,
             assigned_doctor_id=payload.assigned_doctor_id,
             status=VisitStatus.REGISTERED,
-            service_line=payload.service_line,
+            service_line=resolved_service_line,
+            service_line_id=resolved_service_line_id,
+            linked_follow_up_id=payload.linked_follow_up_id,
             started_at=datetime.now(timezone.utc),  # 🔒 Legal start of care
         )
 
@@ -111,7 +136,12 @@ class VisitService:
             emitter="visit",
             payload={
                 "visit_id": str(visit.id),
-                "assigned_doctor_id": str(visit.assigned_doctor_id),
+                "assigned_doctor_id": (
+                    str(visit.assigned_doctor_id) if visit.assigned_doctor_id else None
+                ),
+                "service_line_id": (
+                    str(visit.service_line_id) if visit.service_line_id else None
+                ),
             },
         )
 
@@ -139,6 +169,174 @@ class VisitService:
             self.db.commit()
 
         return visit
+
+    def _resolve_visit_service_line(
+        self,
+        *,
+        payload: VisitCreateRequest,
+        current_user,
+    ) -> tuple[VisitServiceLine, UUID | None, bool, UUID | None]:
+        if payload.service_line_id is None:
+            default_service_line_id = self._resolve_default_service_line_id_for_legacy(
+                clinic_id=current_user.clinic_id,
+                service_line=payload.service_line,
+            )
+            service_line_department_id: UUID | None = None
+            if default_service_line_id is not None:
+                service_line_department_id = ServiceLineService(self.db).resolve_department_id(
+                    clinic_id=current_user.clinic_id,
+                    service_line_id=default_service_line_id,
+                )
+            return (
+                payload.service_line,
+                default_service_line_id,
+                True,
+                service_line_department_id,
+            )
+
+        service_line_service = ServiceLineService(self.db)
+        selected_line = service_line_service.get_or_404(
+            clinic_id=current_user.clinic_id,
+            service_line_id=payload.service_line_id,
+        )
+        if not selected_line.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Selected service line is inactive",
+            )
+
+        if not service_line_service.is_leaf(
+            clinic_id=current_user.clinic_id,
+            service_line_id=selected_line.id,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="service_line_id must reference a leaf service line",
+            )
+
+        requires_doctor = service_line_service.resolve_requires_doctor(
+            clinic_id=current_user.clinic_id,
+            service_line_id=selected_line.id,
+        )
+        root = service_line_service.resolve_root(
+            clinic_id=current_user.clinic_id,
+            service_line_id=selected_line.id,
+        )
+        legacy_line = self._legacy_service_line_from_line(
+            selected_name=selected_line.name,
+            root_name=root.name,
+        )
+        service_line_department_id = service_line_service.resolve_department_id(
+            clinic_id=current_user.clinic_id,
+            service_line_id=selected_line.id,
+        )
+        return legacy_line, selected_line.id, requires_doctor, service_line_department_id
+
+    def _resolve_default_service_line_id_for_legacy(
+        self,
+        *,
+        clinic_id: UUID,
+        service_line: VisitServiceLine,
+    ) -> UUID | None:
+        service_line_service = ServiceLineService(self.db)
+        tree = service_line_service.list_tree(
+            clinic_id=clinic_id,
+            include_inactive=False,
+            department_id=None,
+            include_global_roots=True,
+        )
+
+        target_names = {
+            VisitServiceLine.OPD: {"gopd", "consultation"},
+            VisitServiceLine.ANC: {"anc"},
+            VisitServiceLine.MATERNITY: {"maternity"},
+        }
+        wanted = target_names.get(service_line, set())
+        for root in tree:
+            root_name = str(root["name"]).strip().lower()
+            if root_name in wanted and not root["children"]:
+                return root["id"]
+            for child in root["children"]:
+                child_name = str(child["name"]).strip().lower()
+                if child_name in wanted:
+                    return child["id"]
+        return None
+
+    def _legacy_service_line_from_line(
+        self,
+        *,
+        selected_name: str,
+        root_name: str,
+    ) -> VisitServiceLine:
+        selected_normalized = selected_name.strip().lower()
+        root_normalized = root_name.strip().lower()
+
+        if selected_normalized == "anc":
+            return VisitServiceLine.ANC
+        if selected_normalized == "maternity":
+            return VisitServiceLine.MATERNITY
+        if root_normalized == "maternal & child health":
+            return VisitServiceLine.MATERNITY
+        return VisitServiceLine.OPD
+
+    def _validate_department_scope(
+        self,
+        *,
+        current_user,
+        service_line_department_id: UUID | None,
+    ) -> None:
+        if service_line_department_id is None:
+            return
+
+        selected_department_id = getattr(current_user, "current_department_id", None)
+        if selected_department_id is None:
+            return
+
+        if service_line_department_id != selected_department_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Service line does not belong to the active department context",
+            )
+
+    def _validate_owner_for_service_line(
+        self,
+        *,
+        clinic_id: UUID,
+        assigned_owner_id: UUID,
+        service_line: VisitServiceLine,
+        service_line_id: UUID | None,
+    ) -> None:
+        if service_line_id is None:
+            try:
+                ensure_owner_for_service_line(
+                    self.db,
+                    assigned_owner_id,
+                    clinic_id,
+                    service_line,
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=str(exc),
+                )
+            return
+
+        mapping = (
+            self.db.query(DoctorServiceLine)
+            .join(User, User.id == DoctorServiceLine.doctor_id)
+            .filter(
+                DoctorServiceLine.doctor_id == assigned_owner_id,
+                DoctorServiceLine.service_line_id == service_line_id,
+                User.clinic_id == clinic_id,
+                User.is_active == True,
+            )
+            .first()
+        )
+        if mapping is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Assigned owner is not linked to selected service line",
+            )
 
     def get_active_visit_for_patient(
         self,
@@ -591,6 +789,7 @@ class VisitService:
         self,
         clinic_id,
         status: VisitStatus | None = None,
+        department_id: UUID | None = None,
     ) -> list[Visit]:
         q = self.db.query(Visit).filter(Visit.clinic_id == clinic_id)
         if status is not None:
@@ -602,6 +801,12 @@ class VisitService:
                 )
             )
         visits = q.all()
+        if department_id is not None:
+            visits = self._filter_visits_by_department(
+                visits=visits,
+                clinic_id=clinic_id,
+                department_id=department_id,
+            )
         return self._order_visits_by_priority(visits, clinic_id)
 
     def get_queue_for_doctor(
@@ -609,6 +814,7 @@ class VisitService:
         clinic_id,
         doctor_id,
         status: VisitStatus | None = None,
+        department_id: UUID | None = None,
     ) -> list[Visit]:
         q = (
             self.db.query(Visit)
@@ -626,6 +832,12 @@ class VisitService:
                 )
             )
         visits = q.all()
+        if department_id is not None:
+            visits = self._filter_visits_by_department(
+                visits=visits,
+                clinic_id=clinic_id,
+                department_id=department_id,
+            )
         return self._order_visits_by_priority(visits, clinic_id)
 
     def get_queue_for_owner_by_service_line(
@@ -634,6 +846,7 @@ class VisitService:
         owner_id,
         service_line,
         status: VisitStatus | None = None,
+        department_id: UUID | None = None,
     ) -> list[Visit]:
         q = (
             self.db.query(Visit)
@@ -652,7 +865,44 @@ class VisitService:
                 )
             )
         visits = q.all()
+        if department_id is not None:
+            visits = self._filter_visits_by_department(
+                visits=visits,
+                clinic_id=clinic_id,
+                department_id=department_id,
+            )
         return self._order_visits_by_priority(visits, clinic_id)
+
+    def _filter_visits_by_department(
+        self,
+        *,
+        visits: list[Visit],
+        clinic_id: UUID,
+        department_id: UUID,
+    ) -> list[Visit]:
+        if not visits:
+            return []
+
+        service_line_service = ServiceLineService(self.db)
+        department_cache: dict[UUID, UUID | None] = {}
+        filtered: list[Visit] = []
+
+        for visit in visits:
+            if visit.service_line_id is None:
+                continue
+
+            resolved = department_cache.get(visit.service_line_id)
+            if visit.service_line_id not in department_cache:
+                resolved = service_line_service.resolve_department_id(
+                    clinic_id=clinic_id,
+                    service_line_id=visit.service_line_id,
+                )
+                department_cache[visit.service_line_id] = resolved
+
+            if resolved == department_id:
+                filtered.append(visit)
+
+        return filtered
 
     def _order_visits_by_priority(
         self,

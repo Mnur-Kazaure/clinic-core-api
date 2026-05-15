@@ -5,6 +5,7 @@ from uuid import UUID
 from app.core.auth import get_current_user
 from app.core.dependencies import get_db
 from app.models.lab_request import LabRequest
+from app.models.patient import Patient
 from app.models.visit import Visit
 from app.shared.enums import UserRole
 
@@ -81,3 +82,49 @@ def require_doctor_lab_request_access(
 
     _ensure_doctor_visit_access(visit, current_user)
     return lab_request
+
+
+def require_doctor_lab_history_access(
+    patient_id: UUID,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Patient:
+    patient = (
+        db.query(Patient)
+        .filter(Patient.id == patient_id)
+        .first()
+    )
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    if current_user.role != UserRole.DOCTOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Doctor access required",
+        )
+
+    if patient.clinic_id != current_user.clinic_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cross-clinic access denied",
+        )
+
+    assigned_visit = (
+        db.query(Visit.id)
+        .filter(
+            Visit.patient_id == patient_id,
+            Visit.clinic_id == current_user.clinic_id,
+            Visit.assigned_doctor_id == current_user.id,
+        )
+        .first()
+    )
+    if assigned_visit is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only assigned doctor may access patient lab history",
+        )
+
+    return patient

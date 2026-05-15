@@ -15,6 +15,7 @@ from app.shared.enums import (
     RecordStatus,
     Gender,
     LabRequestStatus,
+    PharmacyPrescriptionWorkflowStatus,
 )
 
 
@@ -46,20 +47,25 @@ def _create_sqlite_triggers(db):
                 NEW.visit_id != OLD.visit_id OR
                 NEW.clinic_id != OLD.clinic_id OR
                 NEW.prescribed_by != OLD.prescribed_by OR
-                NEW.dispensed_by != OLD.dispensed_by OR
                 NEW.drug_name != OLD.drug_name OR
                 NEW.dosage != OLD.dosage OR
                 NEW.frequency != OLD.frequency OR
                 NEW.duration != OLD.duration OR
                 NEW.instructions != OLD.instructions OR
+                NEW.quantity_prescribed != OLD.quantity_prescribed OR
                 NEW.issued_at != OLD.issued_at OR
-                NEW.dispensed_at != OLD.dispensed_at OR
                 NEW.signed_at != OLD.signed_at
             """
-            void_checks = (
-                "NEW.record_status != 'VOIDED' OR NEW.void_reason IS NULL OR "
-                "NEW.status != 'CANCELLED' OR NEW.cancelled_at IS NULL OR " + immutable_checks
-            )
+            signed_checks = f"""
+                (NEW.record_status = 'SIGNED' AND ({immutable_checks})) OR
+                (NEW.record_status = 'VOIDED' AND (
+                    NEW.void_reason IS NULL OR
+                    NEW.status != 'CANCELLED' OR
+                    NEW.cancelled_at IS NULL OR
+                    {immutable_checks}
+                )) OR
+                (NEW.record_status NOT IN ('SIGNED', 'VOIDED'))
+            """
         else:
             immutable_checks = """
                 NEW.lab_request_id != OLD.lab_request_id OR
@@ -79,7 +85,11 @@ def _create_sqlite_triggers(db):
                 BEFORE UPDATE ON {table}
                 FOR EACH ROW
                 WHEN OLD.{status_column} = 'VOIDED'
-                     OR (OLD.{status_column} = 'SIGNED' AND ({void_checks}))
+                     OR (
+                        OLD.{status_column} = 'SIGNED' AND (
+                            {"(" + signed_checks + ")" if table == "prescriptions" else "(" + void_checks + ")"}
+                        )
+                     )
                 BEGIN
                     SELECT RAISE(ABORT, 'signed record immutable');
                 END;
@@ -187,6 +197,40 @@ def test_signed_prescription_update_hard_fails(db, doctor, clinic_id):
     with pytest.raises(Exception):
         db.commit()
     db.rollback()
+
+
+def test_signed_prescription_allows_operational_workflow_updates(db, doctor, clinic_id):
+    _create_sqlite_triggers(db)
+    patient, visit = _seed_visit(db, clinic_id, doctor.id)
+
+    prescription = Prescription(
+        id=uuid.uuid4(),
+        consultation_id=uuid.uuid4(),
+        visit_id=visit.id,
+        clinic_id=clinic_id,
+        prescribed_by=doctor.id,
+        drug_name="Drug",
+        dosage="10mg",
+        frequency="1x",
+        duration="5d",
+        status=PrescriptionStatus.ISSUED,
+        workflow_status=PharmacyPrescriptionWorkflowStatus.AWAITING_PAYMENT_CLEARANCE,
+        record_status=RecordStatus.SIGNED,
+        signed_at=datetime(2026, 1, 1, 1, 0, 0),
+        issued_at=datetime(2026, 1, 1, 1, 0, 0),
+    )
+    db.add(prescription)
+    db.commit()
+
+    prescription.workflow_status = PharmacyPrescriptionWorkflowStatus.READY_TO_DISPENSE
+    prescription.assigned_dispensing_unit_id = uuid.uuid4()
+    db.commit()
+
+    db.refresh(prescription)
+    assert (
+        prescription.workflow_status
+        == PharmacyPrescriptionWorkflowStatus.READY_TO_DISPENSE
+    )
 
 
 def test_signed_lab_result_update_hard_fails(db, doctor, clinic_id):

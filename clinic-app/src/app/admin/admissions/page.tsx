@@ -1929,7 +1929,10 @@ export default function AdmissionRequestsPage() {
                           {new Date(item.assigned_at).toLocaleString()}
                         </td>
                         <td className="px-4 py-3">
-                          {renderInpatientFlags(item.review_due, item.chronic_due)}
+                          {renderInpatientFlags(
+                            Boolean(item.review_due),
+                            Boolean(item.chronic_due)
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <Button
@@ -2875,8 +2878,8 @@ export default function AdmissionRequestsPage() {
                     </p>
                     <div className="mt-2">
                       {renderInpatientFlags(
-                        occupiedDetail.review_due,
-                        occupiedDetail.chronic_due
+                        Boolean(occupiedDetail.review_due),
+                        Boolean(occupiedDetail.chronic_due)
                       )}
                     </div>
                   </div>

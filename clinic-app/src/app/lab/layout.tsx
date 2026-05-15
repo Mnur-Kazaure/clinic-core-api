@@ -6,7 +6,17 @@ import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
 import { UserDTO } from '@/shared/types';
 import { Header } from '@/app/components/Header';
+import { DashboardUserProvider } from '@/app/components/DashboardUserContext';
 import { clinicService } from '@/domains/clinic/services/clinicService';
+import { LAB_WORKSPACE_THEME } from '@/domains/lab/constants/labWorkspaceTheme';
+
+const allowedLabRoles = new Set([
+  'LAB',
+  'LAB_TECH',
+  'LAB_SCIENTIST',
+  'LAB_SUPERVISOR',
+  'LAB_MANAGER',
+]);
 
 export default function LabLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -34,7 +44,7 @@ export default function LabLayout({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        if (user.role !== 'LAB') {
+        if (!allowedLabRoles.has(user.role)) {
           router.push('/confirm-access');
           return;
         }
@@ -47,7 +57,7 @@ export default function LabLayout({ children }: { children: React.ReactNode }) {
           setClinicName(null);
         }
         setAuthStatus('authorized');
-      } catch (error) {
+      } catch {
         router.push('/confirm-access');
         setAuthStatus('unauthorized');
       }
@@ -58,9 +68,15 @@ export default function LabLayout({ children }: { children: React.ReactNode }) {
 
   if (authStatus !== 'authorized') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: LAB_WORKSPACE_THEME.appBackground }}
+      >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <div
+            className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2"
+            style={{ borderBottomColor: LAB_WORKSPACE_THEME.primary }}
+          />
           <p className="mt-2 text-gray-600">Verifying lab access...</p>
         </div>
       </div>
@@ -68,15 +84,11 @@ export default function LabLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {user && (
-        <Header
-          userRole={user.role}
-          userName={user.full_name}
-          clinicName={clinicName}
-        />
-      )}
-      <main className="p-6">{children}</main>
-    </div>
+    <DashboardUserProvider user={user}>
+      <div className="min-h-screen" style={{ background: LAB_WORKSPACE_THEME.appBackground }}>
+        {user && <Header userRole={user.role} clinicName={clinicName} variant="lab" />}
+        <main className="p-6">{children}</main>
+      </div>
+    </DashboardUserProvider>
   );
 }

@@ -15,6 +15,8 @@ def encode_access_token(
     user_id: UUID,
     role: UserRole,
     clinic_id: UUID,
+    current_department_id: UUID | None = None,
+    allowed_department_ids: list[UUID] | None = None,
 ) -> str:
     now = datetime.now(tz=timezone.utc)
 
@@ -22,6 +24,13 @@ def encode_access_token(
         "sub": str(user_id),
         "role": role.value,
         "clinic_id": str(clinic_id),
+        "current_department_id": (
+            str(current_department_id) if current_department_id is not None else None
+        ),
+        "allowed_department_ids": [
+            str(department_id)
+            for department_id in (allowed_department_ids or [])
+        ],
         "iat": int(now.timestamp()),
         "exp": int(
             (now + timedelta(seconds=settings.AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS)).timestamp()

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ConsultationModal } from '@/app/doctor/components/consultation/ConsultationModal';
 import { LabRequestForm } from '@/app/doctor/components/lab/LabRequestForm';
+import { LabResultsViewerModal } from '@/app/doctor/components/lab/LabResultsViewerModal';
 import { PrescriptionForm } from '@/app/doctor/components/prescription/PrescriptionForm';
 import { DoctorQueue } from '@/app/doctor/components/DoctorQueue';
 import { VisitDetailsModal } from '@/app/reception/components/visit/VisitDetailsModal';
@@ -16,8 +17,20 @@ import { visitService } from '@/domains/visit/services/visitService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 import { doctorLabService } from '@/domains/lab/services/doctorLabService';
 import { LabRequest, LabResult } from '@/domains/lab/services/labService';
+import { DashboardHero } from '@/app/components/DashboardHero';
+import {
+  getDashboardUserDisplayName,
+  useDashboardUser,
+} from '@/app/components/DashboardUserContext';
+import { HOSPITAL_NAME } from '@/shared/constants/branding';
 
 export default function DoctorPage() {
+  const dashboardUser = useDashboardUser();
+  type ConsultationLabState = {
+    labStatus: 'pending' | 'ready' | 'none';
+    labRequestedAt: string | null;
+  };
+
   const [selectedVisit, setSelectedVisit] = useState<VisitResponse | null>(null);
   const [consultationVisit, setConsultationVisit] =
     useState<VisitResponse | null>(null);
@@ -159,11 +172,12 @@ export default function DoctorPage() {
   const maskId = (value?: string | null) =>
     value ? `${value.substring(0, 6)}…${value.substring(value.length - 4)}` : '—';
 
-  const getLabStatusForVisit = useCallback(async (visitId: string) => {
+  const getLabStatusForVisit = useCallback(
+    async (visitId: string): Promise<ConsultationLabState> => {
     try {
       const requests = await doctorLabService.getLabRequestsByVisit(visitId);
       if (requests.length === 0) {
-        return { labStatus: 'none' as const, labRequestedAt: null };
+        return { labStatus: 'none', labRequestedAt: null };
       }
       const latest = requests[0];
       const hasCompleted = requests.some((r) => r.status === 'COMPLETED');
@@ -172,9 +186,11 @@ export default function DoctorPage() {
         labRequestedAt: latest.created_at,
       };
     } catch {
-      return { labStatus: 'none' as const, labRequestedAt: null };
+      return { labStatus: 'none', labRequestedAt: null };
     }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -419,51 +435,17 @@ export default function DoctorPage() {
   const handleCheckLabResults = async () => {
     if (!activeConsultation) return;
     setLabResultsOpen(true);
-    setLabResultsError(null);
-    setLabResultsNotice(null);
-    setLabResults([]);
-    setLabRequests([]);
-    setSelectedLabRequestId(null);
-    setLabRequestInfo(null);
-
     try {
-      setLabResultsLoading(true);
-      try {
-        const consultation = await consultationService.getConsultationByVisit(
-          activeConsultation.visitId
-        );
-        if (consultation) {
-          setDoctorFullName(consultation.doctor_full_name);
-        }
-      } catch {
-        setDoctorFullName(null);
-      }
-
-      const requests = await doctorLabService.getLabRequestsByVisit(
+      const consultation = await consultationService.getConsultationByVisit(
         activeConsultation.visitId
       );
-      const sortedRequests = [...requests].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setLabRequests(sortedRequests);
-
-      if (sortedRequests.length === 0) {
-        setLabResultsNotice('No lab order found for this visit.');
-        setLabResultsLoading(false);
-        return;
+      if (consultation) {
+        setDoctorFullName(consultation.doctor_full_name);
+      } else {
+        setDoctorFullName(null);
       }
-
-      const latestRequest = sortedRequests[0];
-      await loadLabResultsForRequest(latestRequest);
-    } catch (error: unknown) {
-      const detail =
-        typeof error === 'object' && error && 'response' in error
-          ? (error as { response?: { data?: { detail?: string } } }).response?.data
-              ?.detail
-          : undefined;
-      setLabResultsError(detail || 'Unable to load lab results.');
-      setLabResultsLoading(false);
+    } catch {
+      setDoctorFullName(null);
     }
   };
 
@@ -537,7 +519,11 @@ export default function DoctorPage() {
     visit: VisitResponse,
     hasActiveConsultation: boolean
   ) => {
-    if (hasActiveConsultation || visit.status !== VisitStatus.TRIAGED) {
+    const needsTransitionToConsultation =
+      !hasActiveConsultation &&
+      [VisitStatus.REGISTERED, VisitStatus.TRIAGED].includes(visit.status);
+
+    if (!needsTransitionToConsultation) {
       setIsConsultationModalOpen(true);
       return;
     }
@@ -612,6 +598,7 @@ export default function DoctorPage() {
     );
     const labStatus = activeEntry?.labStatus ?? 'none';
     const canStartConsultation = [
+      'REGISTERED',
       'TRIAGED',
       'IN_CONSULTATION',
       'LAB_REQUESTED',
@@ -868,28 +855,27 @@ export default function DoctorPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <DashboardHero
+        title="Doctor Dashboard"
+        subtitle={HOSPITAL_NAME}
+        workspaceLabel="Clinical workspace for consultations, prescriptions, and lab requests"
+        monogram="K"
+        rightSlot={
+          <>
             <div>
-              <h1 className="text-3xl font-semibold text-[#0B4DA2]">
-                Doctor Dashboard
-              </h1>
-              <p className="text-sm text-gray-600">
-                Clinical workspace for consultations, prescriptions, and lab requests.
-              </p>
+              <span className="font-semibold">Doctor:</span>{' '}
+              {getDashboardUserDisplayName(dashboardUser)}
             </div>
-
-            {activeConsultation && (
-              <div className="mt-4 sm:mt-0">
-                <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-[#E6F4FB] text-[#0B4DA2]">
-                  Active Consultation
-                </div>
+            {activeConsultation ? (
+              <div className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white">
+                Active Consultation
               </div>
+            ) : (
+              <div>Queue monitoring active</div>
             )}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
@@ -1210,229 +1196,12 @@ export default function DoctorPage() {
         />
       )}
 
-      {labResultsOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-slate-200">
-            <div className="border-b border-slate-200 bg-[#F5FAFE] px-6 py-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#0B4DA2]">
-                    Lab Results
-                  </p>
-                  <h2 className="text-2xl font-semibold text-slate-900 mt-1">
-                    Diagnostic Results Review
-                  </h2>
-                  {consultationVisit && (
-                    <p className="text-sm text-slate-600 mt-1">
-                      {consultationVisit.patient_name || 'Unknown patient'} •{' '}
-                      {consultationVisit.patient_mrn
-                        ? `MRN ${consultationVisit.patient_mrn}`
-                        : `Visit ${maskId(consultationVisit.id)}`}
-                    </p>
-                  )}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {consultationVisit && (
-                      <span className="inline-flex items-center rounded-full bg-[#E6F4FB] px-2.5 py-0.5 text-xs font-medium text-[#0B4DA2]">
-                        Status: {consultationVisit.status}
-                      </span>
-                    )}
-                    {labRequestInfo && (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-                        Test: {labRequestInfo.test_name}
-                      </span>
-                    )}
-                    {consultationVisit &&
-                      consultationVisit.assigned_doctor_id && (
-                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-                          Attending doctor: {doctorFullName || '—'}
-                        </span>
-                      )}
-                  </div>
-                  {labRequestInfo && (
-                    <div className="mt-2 space-y-1 text-xs text-slate-500">
-                      <p>
-                        Source: Lab request {labRequestInfo.id.substring(0, 8)}... •
-                        Status {labRequestInfo.status}
-                      </p>
-                      {labRequestInfo.requested_by_name && (
-                        <p>
-                          Requested by {labRequestInfo.requested_by_name}
-                          {labRequestInfo.requested_by_role
-                            ? ` · ${labRequestInfo.requested_by_role}`
-                            : ''}
-                        </p>
-                      )}
-                      {labRequestInfo.special_instructions && (
-                        <p>
-                          Instructions: {labRequestInfo.special_instructions}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => setLabResultsOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
-                  aria-label="Close lab results"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            <div className="px-6 py-5 space-y-4">
-              {labRequests.length > 0 && (
-                <div className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Lab Requests
-                    </p>
-                    <span className="text-xs text-slate-500">
-                      {labRequests.length} total
-                    </span>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {labRequests.map((request, index) => {
-                      const isSelected = request.id === selectedLabRequestId;
-                      const isLoading = request.id === labResultsLoadingRequestId;
-                      return (
-                        <button
-                          key={request.id}
-                          type="button"
-                          onClick={() => loadLabResultsForRequest(request)}
-                          className={`w-full rounded-md border px-3 py-2 text-left transition ${
-                            isSelected
-                              ? 'border-blue-200 bg-blue-50 border-l-4 border-l-[#0B4DA2] shadow-sm'
-                              : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-sm font-medium text-slate-900">
-                              {request.test_name}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {isLoading && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-[#E6F4FB] px-2 py-0.5 text-xs font-medium text-[#0B4DA2]">
-                                  <svg
-                                    className="h-3 w-3 animate-spin text-[#0B4DA2]"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                  >
-                                    <circle
-                                      className="opacity-25"
-                                      cx="12"
-                                      cy="12"
-                                      r="9"
-                                    />
-                                    <path
-                                      className="opacity-75"
-                                      d="M12 3a9 9 0 0 1 9 9"
-                                    />
-                                  </svg>
-                                  <span>Loading</span>
-                                </span>
-                              )}
-                              {isSelected && (
-                                <span className="inline-flex items-center rounded-full bg-[#E6F4FB] px-2 py-0.5 text-xs font-medium text-[#0B4DA2]">
-                                  Selected
-                                </span>
-                              )}
-                              {index === 0 && (
-                                <span className="inline-flex items-center rounded-full bg-[#E6F4FB] px-2 py-0.5 text-xs font-medium text-[#0B4DA2]">
-                                  Latest
-                                </span>
-                              )}
-                              <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                  request.status === 'COMPLETED'
-                                    ? 'bg-green-100 text-green-800'
-                                    : request.status === 'CANCELLED'
-                                      ? 'bg-slate-100 text-slate-600'
-                                      : 'bg-yellow-100 text-yellow-800'
-                                }`}
-                              >
-                                {request.status}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                            <span>Requested {getTimeAgo(request.created_at)}</span>
-                            {request.requested_by_name && (
-                              <span>
-                                By {request.requested_by_name}
-                                {request.requested_by_role
-                                  ? ` · ${request.requested_by_role}`
-                                  : ''}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {labResultsLoading && (
-                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                  Loading results...
-                </div>
-              )}
-              {!labResultsLoading && labResultsError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {labResultsError}
-                </div>
-              )}
-              {!labResultsLoading && !labResultsError && labResultsNotice && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  {labResultsNotice}
-                </div>
-              )}
-
-              {!labResultsLoading &&
-                !labResultsError &&
-                labResults.length > 0 && (
-                  <div className="space-y-3">
-                    {labResults.map((result) => (
-                      <div
-                        key={result.id}
-                        className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-base font-semibold text-slate-900">
-                            {result.result_value} {result.result_unit}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            {new Date(result.created_at).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="mt-2 text-sm text-slate-600">
-                          Reference range: {result.reference_range}
-                        </div>
-                        <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                          <span>
-                            Technician: {result.technician_id.substring(0, 12)}...
-                          </span>
-                          <span>Result ID: {result.id.substring(0, 8)}...</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-              <div className="flex justify-end pt-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => setLabResultsOpen(false)}
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <LabResultsViewerModal
+        visit={consultationVisit}
+        doctorFullName={doctorFullName}
+        isOpen={labResultsOpen}
+        onClose={() => setLabResultsOpen(false)}
+      />
 
       {activeConsultation && isLabRequestModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -1507,7 +1276,7 @@ export default function DoctorPage() {
       <footer className="bg-white border-t mt-8 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-gray-500">
-            Doctor Portal • Clinic Management System •{' '}
+            Doctor Portal • {HOSPITAL_NAME} •{' '}
             {new Date().toLocaleDateString()}
           </p>
         </div>

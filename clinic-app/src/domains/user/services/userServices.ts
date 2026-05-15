@@ -29,8 +29,13 @@ export const userService = {
     return response.data;
   },
 
-  async listAssignableStaff(): Promise<Doctor[]> {
-    const response = await client.get('/v1/users/assignable');
+  async listAssignableStaff(params?: {
+    service_line_id?: string;
+    role?: string;
+    include_all_departments?: boolean;
+    department_id?: string | null;
+  }): Promise<Doctor[]> {
+    const response = await client.get('/v1/users/assignable', { params });
     return response.data;
   },
 };

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import uuid
 
 from app.models.base import Base
-from app.shared.enums import LabRequestStatus
+from app.shared.enums import LabRequestStatus, LabRequestWorkflowStatus
 
 
 class LabRequest(Base):
@@ -19,6 +19,12 @@ class LabRequest(Base):
         index=True,
     )
 
+    billing_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("billing_items.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+    )
+
     clinic_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clinics.id", ondelete="CASCADE"),
         nullable=False,
@@ -30,7 +36,26 @@ class LabRequest(Base):
     )
 
     test_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    test_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     special_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lab_test_catalog_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("lab_test_catalog.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    lab_test_config_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("lab_test_config.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    target_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("service_lines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    workflow_status: Mapped[LabRequestWorkflowStatus] = mapped_column(
+        Enum(LabRequestWorkflowStatus, name="lab_request_workflow_status"),
+        nullable=False,
+        default=LabRequestWorkflowStatus.ORDERED,
+        server_default=LabRequestWorkflowStatus.ORDERED.value,
+    )
 
     status: Mapped[LabRequestStatus] = mapped_column(
         Enum(LabRequestStatus, name="lab_request_status"),

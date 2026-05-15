@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { clinicService } from '@/domains/clinic/services/clinicService';
+import {
+  serviceLineAdminService,
+  ServiceLineTreeNodeDTO,
+} from '@/domains/admin/services/serviceLineAdminService';
 import { roleSessionService } from '@/domains/auth/services/roleSessionService';
 import { StaffResponse, UserDTO } from '@/shared/types';
 import { Card } from '@/shared/Card';
@@ -9,10 +13,35 @@ import { Button } from '@/shared/Button';
 import { Input } from '@/shared/Input';
 import { Alert } from '@/shared/Alert';
 import { StatusBadge } from '@/shared/StatusBadge';
-import { StaffFormModal, StaffFormPayload } from './StaffFormModal';
+import { ServiceLineKind } from '@/shared/enums';
+import { LabUnitOption, StaffFormModal, StaffFormPayload } from './StaffFormModal';
+
+function flattenServiceLines(
+  nodes: ServiceLineTreeNodeDTO[],
+  lineage: string[] = []
+): LabUnitOption[] {
+  return nodes.flatMap((node) => {
+    const nextLineage = [...lineage, node.name];
+    const pathLabel = nextLineage.join(' / ');
+    const current: LabUnitOption[] =
+      node.service_line_kind === ServiceLineKind.LAB_UNIT &&
+      node.children.length === 0 &&
+      node.is_active
+        ? [
+            {
+              id: node.id,
+              name: node.name,
+              path_label: pathLabel,
+            },
+          ]
+        : [];
+    return [...current, ...flattenServiceLines(node.children, nextLineage)];
+  });
+}
 
 export function StaffDirectory() {
   const [staff, setStaff] = useState<StaffResponse[]>([]);
+  const [labUnitOptions, setLabUnitOptions] = useState<LabUnitOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,11 +61,49 @@ export function StaffDirectory() {
     const total = staff.length;
     const active = staff.filter((member) => member.is_active).length;
     const disabled = staff.filter((member) => !member.is_active).length;
+    const cashiers = staff.filter((member) => member.role === 'CASHIER').length;
+    const cmdUsers = staff.filter((member) => member.role === 'CMD').length;
     const doctors = staff.filter((member) => member.role === 'DOCTOR').length;
-    const labs = staff.filter((member) => member.role === 'LAB').length;
+    const labs = staff.filter((member) =>
+      ['LAB', 'LAB_TECH', 'LAB_SCIENTIST', 'LAB_SUPERVISOR'].includes(member.role)
+    ).length;
+    const labManagers = staff.filter((member) => member.role === 'LAB_MANAGER').length;
     const pharmacy = staff.filter((member) => member.role === 'PHARMACY').length;
-    return { total, active, disabled, doctors, labs, pharmacy };
+    const pharmacyHods = staff.filter((member) => member.role === 'PHARMACY_HOD').length;
+    const pharmacyStoreOfficers = staff.filter(
+      (member) => member.role === 'PHARMACY_STORE_OFFICER'
+    ).length;
+    return {
+      total,
+      active,
+      disabled,
+      cashiers,
+      cmdUsers,
+      doctors,
+      labs,
+      labManagers,
+      pharmacy,
+      pharmacyHods,
+      pharmacyStoreOfficers,
+    };
   }, [staff]);
+
+  const roleLabel = (role: string) => {
+    switch (role) {
+      case 'LAB':
+        return 'Lab (Legacy)';
+      case 'LAB_MANAGER':
+        return 'Medical Laboratory HOD';
+      case 'CMD':
+        return 'Chief Medical Director (CMD)';
+      case 'PHARMACY_HOD':
+        return 'Pharmacy HOD';
+      case 'PHARMACY_STORE_OFFICER':
+        return 'Pharmacy Store Officer';
+      default:
+        return role.replaceAll('_', ' ');
+    }
+  };
 
   const filteredStaff = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -64,8 +131,12 @@ export function StaffDirectory() {
         setRefreshing(true);
       }
       setError(null);
-      const data = await clinicService.listStaff();
+      const [data, serviceLineTree] = await Promise.all([
+        clinicService.listStaff(),
+        serviceLineAdminService.listServiceLines(),
+      ]);
       setStaff(data);
+      setLabUnitOptions(flattenServiceLines(serviceLineTree));
     } catch (err: any) {
       console.error('Failed to load staff list:', err);
       setError('Unable to load staff list.');
@@ -132,15 +203,20 @@ export function StaffDirectory() {
         email: payload.email,
         password: payload.password || '',
         role: payload.role,
+        allowed_lab_unit_ids: payload.allowed_lab_unit_ids || [],
+        default_lab_unit_id: payload.default_lab_unit_id || null,
       });
     } else if (selectedStaff) {
       await clinicService.updateStaff(selectedStaff.id, {
         full_name: payload.full_name,
+        role: payload.role,
         is_active: payload.is_active,
         specialty: payload.specialty || null,
         department: payload.department || null,
         room_label: payload.room_label || null,
         availability_status: payload.availability_status || null,
+        allowed_lab_unit_ids: payload.allowed_lab_unit_ids,
+        default_lab_unit_id: payload.default_lab_unit_id || null,
       });
     }
 
@@ -169,8 +245,12 @@ export function StaffDirectory() {
             <span>Total: {staffStats.total}</span>
             <span>Active: {staffStats.active}</span>
             <span>Disabled: {staffStats.disabled}</span>
-            <span>Doctors: {staffStats.doctors}</span>
-          </div>
+            <span>Cashiers: {staffStats.cashiers}</span>
+                <span>Doctors: {staffStats.doctors}</span>
+                <span>Lab Managers: {staffStats.labManagers}</span>
+                <span>Pharmacy HODs: {staffStats.pharmacyHods}</span>
+                <span>Pharmacy Store Officers: {staffStats.pharmacyStoreOfficers}</span>
+              </div>
           <div className="flex gap-3">
             <Button
               variant="secondary"
@@ -220,10 +300,10 @@ export function StaffDirectory() {
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-wide text-slate-400">
-              Lab / Pharmacy
+              Lab Ops / Lab HOD / Pharmacy
             </p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {staffStats.labs} / {staffStats.pharmacy}
+              {staffStats.labs} / {staffStats.labManagers} / {staffStats.pharmacy}
             </p>
           </div>
         </div>
@@ -250,9 +330,18 @@ export function StaffDirectory() {
             >
               <option value="ALL">All Roles</option>
               <option value="RECEPTION">Reception</option>
+              <option value="CASHIER">Cashier</option>
+              <option value="ACCOUNTANT">Accountant</option>
+              <option value="CMD">Chief Medical Director (CMD)</option>
               <option value="DOCTOR">Doctor</option>
               <option value="LAB">Lab</option>
+              <option value="LAB_TECH">Lab Tech</option>
+              <option value="LAB_SCIENTIST">Lab Scientist</option>
+              <option value="LAB_SUPERVISOR">Lab Supervisor</option>
+              <option value="LAB_MANAGER">Lab Manager</option>
               <option value="PHARMACY">Pharmacy</option>
+              <option value="PHARMACY_HOD">Pharmacy HOD</option>
+              <option value="PHARMACY_STORE_OFFICER">Pharmacy Store Officer</option>
               <option value="CLINIC_ADMIN">Clinic Admin</option>
             </select>
           </div>
@@ -309,7 +398,7 @@ export function StaffDirectory() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-gray-800">
-                        {member.role.replace('_', ' ')}
+                        {roleLabel(member.role)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -332,6 +421,26 @@ export function StaffDirectory() {
                             {member.availability_status || 'Status unknown'}
                           </div>
                         </div>
+                      ) : ['LAB', 'LAB_TECH', 'LAB_SCIENTIST', 'LAB_SUPERVISOR'].includes(
+                          member.role
+                        ) ? (
+                        <div className="space-y-1">
+                          <div>
+                            Default unit: {member.default_lab_unit_name || 'Not set'}
+                          </div>
+                          <div>
+                            Units:{' '}
+                            {member.allowed_lab_units?.length
+                              ? member.allowed_lab_units.map((unit) => unit.name).join(', ')
+                              : 'None assigned'}
+                          </div>
+                        </div>
+                      ) : member.role === 'LAB_MANAGER' ? (
+                        <span>Lab HOD / oversight workspace</span>
+                      ) : member.role === 'PHARMACY_HOD' ? (
+                        <span>Pharmacy HOD / governance workspace</span>
+                      ) : member.role === 'PHARMACY_STORE_OFFICER' ? (
+                        <span>Pharmacy Store / central supply operations</span>
                       ) : (
                         <span>—</span>
                       )}
@@ -365,6 +474,7 @@ export function StaffDirectory() {
         isOpen={modalOpen}
         mode={modalMode}
         initialData={selectedStaff}
+        labUnitOptions={labUnitOptions}
         onClose={() => setModalOpen(false)}
         onSubmit={handleSubmit}
       />
