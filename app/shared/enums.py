@@ -58,8 +58,6 @@ class UserRole(str, Enum):
     # 🔒 Non-human actor
     SYSTEM = "SYSTEM"
     CLINIC_ADMIN = "CLINIC_ADMIN"
-    CMD = "CMD"
-
 
 
 

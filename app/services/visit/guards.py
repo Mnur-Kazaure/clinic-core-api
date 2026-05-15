@@ -78,7 +78,6 @@ ROLE_TRANSITION_MATRIX = {
         VisitStatus.COMPLETED,
     ],
     UserRole.ADMIN: list(VisitStatus),
-    UserRole.CMD: list(VisitStatus),
 }
 
 
@@ -147,9 +146,8 @@ def guard_can_transition(db, visit: Visit, to_status: VisitStatus, user):
 
     # 5️⃣ Assigned doctor enforcement
     if (
-        role in {UserRole.DOCTOR, UserRole.CHEW, UserRole.MIDWIFE, UserRole.CMD}
+        role in {UserRole.DOCTOR, UserRole.CHEW, UserRole.MIDWIFE}
         and to_status == VisitStatus.IN_CONSULTATION
-        and role != UserRole.CMD
         and visit.assigned_doctor_id != user.id
     ):
         raise PermissionError(

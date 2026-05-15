@@ -8,7 +8,6 @@ export enum UserRole {
   MIDWIFE = 'MIDWIFE',
   ADMIN = 'ADMIN',
   CLINIC_ADMIN = 'CLINIC_ADMIN',
-  CMD = 'CMD',
   SYSTEM = 'SYSTEM',
 }
 

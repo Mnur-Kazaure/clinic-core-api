@@ -1,4 +1,3 @@
-from __future__ import annotations
 # app/services/bed_service.py
 from collections import defaultdict
 from datetime import datetime, timezone
