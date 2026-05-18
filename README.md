@@ -1,8 +1,10 @@
-# HIS Monorepo (Clinic Information System)
+# KSH Enterprise HIS Monorepo
 
 ## System overview
 
-This repository contains:
+This repository contains the Specialist Hospital Kazaure Hospital Information System (HIS). HIS is the parent enterprise platform; EMR/clinical records are implemented as a clinical subdomain inside the HIS ecosystem, not as a separate platform.
+
+The monorepo contains:
 
 - Backend API: FastAPI + SQLAlchemy + Alembic (`app/`, `alembic/`)
 - Frontend app: Next.js (`clinic-app/`)
