@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Header } from '@/app/components/Header';
 import { DashboardUserProvider } from '@/app/components/DashboardUserContext';
 import { authGuard } from '@/domains/auth/guards/authGuard';
 import { roleContextGuard } from '@/domains/auth/guards/roleContextGuard';
-import { clinicService } from '@/domains/clinic/services/clinicService';
 import { UserDTO } from '@/shared/types';
 
 const CMD_DASHBOARD_ROLES = new Set(['CMD']);
@@ -16,7 +14,6 @@ export default function CmdLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [authStatus, setAuthStatus] = useState<'checking' | 'authorized' | 'unauthorized'>('checking');
   const [user, setUser] = useState<UserDTO | null>(null);
-  const [clinicName, setClinicName] = useState<string | null>(null);
 
   useEffect(() => {
     async function verifyAccess() {
@@ -39,12 +36,6 @@ export default function CmdLayout({ children }: { children: React.ReactNode }) {
         }
 
         setUser(user);
-        try {
-          const profile = await clinicService.getProfile();
-          setClinicName(profile.name);
-        } catch {
-          setClinicName(null);
-        }
         setAuthStatus('authorized');
       } catch {
         router.push('/confirm-access');
@@ -57,10 +48,11 @@ export default function CmdLayout({ children }: { children: React.ReactNode }) {
 
   if (authStatus !== 'authorized') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600" />
-          <p className="mt-2 text-gray-600">Verifying CMD access...</p>
+      <div className="flex min-h-screen items-center justify-center bg-[#06111f] text-white">
+        <div className="rounded-lg border border-cyan-300/20 bg-white/[0.06] px-8 py-7 text-center shadow-2xl shadow-cyan-950/30">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-cyan-300" />
+          <p className="mt-4 text-sm font-semibold text-cyan-50">Verifying CMD access...</p>
+          <p className="mt-2 text-xs text-slate-400">Executive command center authorization</p>
         </div>
       </div>
     );
@@ -68,10 +60,7 @@ export default function CmdLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <DashboardUserProvider user={user}>
-      <div className="min-h-screen bg-slate-50">
-        {user ? <Header userRole={user.role} clinicName={clinicName} /> : null}
-        <main className="p-6">{children}</main>
-      </div>
+      {children}
     </DashboardUserProvider>
   );
 }
