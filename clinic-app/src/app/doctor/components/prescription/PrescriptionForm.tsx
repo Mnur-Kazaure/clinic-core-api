@@ -60,7 +60,6 @@ export function PrescriptionForm({
   const [frequency, setFrequency] = useState('');
   const [duration, setDuration] = useState('');
   const [instructions, setInstructions] = useState('');
-  const [quantity, setQuantity] = useState<number | ''>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,17 +135,21 @@ export function PrescriptionForm({
       setFrequency('');
       setDuration('');
       setInstructions('');
-      setQuantity('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to issue prescription:', err);
+      const response =
+        typeof err === 'object' && err && 'response' in err
+          ? (err as { response?: { status?: number; data?: { detail?: string } } })
+              .response
+          : undefined;
 
-      if (err.response?.status === 403) {
+      if (response?.status === 403) {
         setError('You do not have permission to issue prescriptions');
-      } else if (err.response?.status === 400) {
-        setError(err.response.data.detail || 'Invalid prescription data');
-      } else if (err.response?.status === 404) {
+      } else if (response?.status === 400) {
+        setError(response.data?.detail || 'Invalid prescription data');
+      } else if (response?.status === 404) {
         setError('Consultation not found or not accessible');
-      } else if (err.response?.status === 409) {
+      } else if (response?.status === 409) {
         setError('Cannot issue prescription for completed consultation');
       } else {
         setError('Failed to issue prescription. Please try again.');
@@ -204,22 +207,26 @@ export function PrescriptionForm({
 
   if (compact) {
     return (
-      <Card title="Issue Prescription">
+      <Card title="Issue Prescription" titleClassName="!text-[#0B4DA2]">
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-xl border border-blue-100 bg-[#F5FAFE] px-3 py-2 text-sm text-slate-700">
+            Prescriptions are limited to governed pharmacy catalog items and
+            remain linked to the active consultation.
+          </div>
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-600">{error}</p>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+              <p className="text-sm text-rose-700">{error}</p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">
               Medication
             </label>
             <select
               value={selectedCatalogItemId}
               onChange={(e) => handleCatalogSelect(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0B4DA2]"
               disabled={isSubmitting}
             >
               <option value="">Select approved pharmacy catalog item...</option>
@@ -229,7 +236,7 @@ export function PrescriptionForm({
                 </option>
               ))}
             </select>
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-2 text-xs font-medium text-slate-500">
               Only CMD-approved and Accounts-priced items are available for prescribing.
             </p>
           </div>
@@ -244,13 +251,13 @@ export function PrescriptionForm({
           />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
               Frequency
             </label>
             <select
               value={frequency}
               onChange={(e) => setFrequency(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0B4DA2]"
               disabled={isSubmitting}
             >
               <option value="">Select frequency...</option>
@@ -263,13 +270,13 @@ export function PrescriptionForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
               Duration
             </label>
             <select
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0B4DA2]"
               disabled={isSubmitting}
             >
               <option value="">Select duration...</option>
@@ -295,7 +302,7 @@ export function PrescriptionForm({
           </div>
 
           {frequency && duration && (
-            <div className="p-3 bg-blue-50 rounded-md">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
               <p className="text-sm text-blue-800">
                 Estimated quantity:{' '}
                 <span className="font-bold">{calculateQuantity()}</span> doses
@@ -327,7 +334,7 @@ export function PrescriptionForm({
             )}
           </div>
 
-          <div className="text-xs text-gray-500 pt-2">
+          <div className="pt-2 text-xs font-medium text-slate-500">
             <p>Prescription will be sent to pharmacy for dispensing.</p>
             <p>Patient can collect medication after pharmacy processes.</p>
           </div>
@@ -560,7 +567,7 @@ export function PrescriptionForm({
                 <div className="pt-4 border-t text-xs text-gray-500">
                   <p>Visit: {visitId.substring(0, 16)}...</p>
                   <p>Date: {new Date().toLocaleDateString()}</p>
-                  <p className="mt-2">Doctor's Signature: ________________</p>
+                  <p className="mt-2">Doctor&apos;s Signature: ________________</p>
                 </div>
               </div>
 
@@ -623,16 +630,15 @@ export function PrescriptionForm({
               type="button"
               variant="secondary"
               size="lg"
-              onClick={() => {
-                setSelectedCatalogItemId('');
-                setDosage('');
-                setFrequency('');
-                setDuration('');
-                setInstructions('');
-                setQuantity('');
-              }}
-              disabled={isSubmitting}
-            >
+                onClick={() => {
+                  setSelectedCatalogItemId('');
+                  setDosage('');
+                  setFrequency('');
+                  setDuration('');
+                  setInstructions('');
+                }}
+                disabled={isSubmitting}
+              >
               Clear Form
             </Button>
           </div>

@@ -9,20 +9,97 @@ import { DoctorQueue } from '@/app/doctor/components/DoctorQueue';
 import { VisitDetailsModal } from '@/app/reception/components/visit/VisitDetailsModal';
 import { PurposeOfUse, VisitStatus } from '@/shared/enums';
 import { Button } from '@/shared/Button';
-import { Card } from '@/shared/Card';
 import { Tooltip } from '@/shared/Tooltip';
 import { ConsultationResponse, VisitResponse } from '@/shared/types';
 import { consultationService } from '@/domains/consultation/services/consultationService';
 import { visitService } from '@/domains/visit/services/visitService';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 import { doctorLabService } from '@/domains/lab/services/doctorLabService';
-import { LabRequest, LabResult } from '@/domains/lab/services/labService';
-import { DashboardHero } from '@/app/components/DashboardHero';
 import {
   getDashboardUserDisplayName,
   useDashboardUser,
 } from '@/app/components/DashboardUserContext';
 import { HOSPITAL_NAME } from '@/shared/constants/branding';
+
+type DoctorWorkspaceKey =
+  | 'overview'
+  | 'queue'
+  | 'active'
+  | 'completed'
+  | 'summary'
+  | 'complaints'
+  | 'examination'
+  | 'diagnosis'
+  | 'notes'
+  | 'labRequests'
+  | 'labResults'
+  | 'radiology'
+  | 'prescription'
+  | 'pharmacy'
+  | 'followUp'
+  | 'admission'
+  | 'referral'
+  | 'audit';
+
+const WORKSPACE_NAV: {
+  group: string;
+  items: { key: DoctorWorkspaceKey; label: string; short: string }[];
+}[] = [
+  {
+    group: 'Clinical Command',
+    items: [
+      { key: 'overview', label: 'Consultation Overview', short: 'CO' },
+      { key: 'queue', label: 'My Patient Queue', short: 'PQ' },
+      { key: 'active', label: 'Active Consultation', short: 'AC' },
+      { key: 'completed', label: 'Completed Consultations', short: 'CC' },
+    ],
+  },
+  {
+    group: 'Patient Encounter',
+    items: [
+      { key: 'summary', label: 'Patient Clinical Summary', short: 'PS' },
+      { key: 'complaints', label: 'Complaints & History', short: 'CH' },
+      { key: 'examination', label: 'Examination Findings', short: 'EF' },
+      { key: 'diagnosis', label: 'Diagnosis / Assessment', short: 'DA' },
+      { key: 'notes', label: 'Clinical Notes', short: 'CN' },
+    ],
+  },
+  {
+    group: 'Orders & Treatment',
+    items: [
+      { key: 'labRequests', label: 'Lab Requests', short: 'LR' },
+      { key: 'labResults', label: 'Lab Results', short: 'LS' },
+      { key: 'radiology', label: 'Radiology Requests', short: 'XR' },
+      { key: 'prescription', label: 'Prescription Plan', short: 'RX' },
+      { key: 'pharmacy', label: 'Send to Pharmacy', short: 'PH' },
+    ],
+  },
+  {
+    group: 'Disposition',
+    items: [
+      { key: 'followUp', label: 'Follow-Up / Recall', short: 'FU' },
+      { key: 'admission', label: 'Admission Request', short: 'AD' },
+      { key: 'referral', label: 'Internal Referral', short: 'IR' },
+      { key: 'audit', label: 'Consultation Audit Trail', short: 'AT' },
+    ],
+  },
+];
+
+const API_PENDING_WORKSPACES = new Set<DoctorWorkspaceKey>([
+  'radiology',
+  'referral',
+  'audit',
+]);
+
+const PRIMARY_WORKFLOW_WORKSPACES = new Set<DoctorWorkspaceKey>([
+  'queue',
+  'active',
+  'labRequests',
+  'labResults',
+  'prescription',
+  'pharmacy',
+  'admission',
+]);
 
 export default function DoctorPage() {
   const dashboardUser = useDashboardUser();
@@ -61,22 +138,12 @@ export default function DoctorPage() {
   >([]);
 
   const [labResultsOpen, setLabResultsOpen] = useState(false);
-  const [labResultsLoading, setLabResultsLoading] = useState(false);
-  const [labResultsLoadingRequestId, setLabResultsLoadingRequestId] = useState<
-    string | null
-  >(null);
-  const [labResultsError, setLabResultsError] = useState<string | null>(null);
-  const [labResultsNotice, setLabResultsNotice] = useState<string | null>(null);
-  const [labResults, setLabResults] = useState<LabResult[]>([]);
-  const [labRequests, setLabRequests] = useState<LabRequest[]>([]);
-  const [selectedLabRequestId, setSelectedLabRequestId] = useState<
-    string | null
-  >(null);
-  const [labRequestInfo, setLabRequestInfo] = useState<LabRequest | null>(null);
   const [doctorFullName, setDoctorFullName] = useState<string | null>(null);
   const [activeConsultationsUpdatedAt, setActiveConsultationsUpdatedAt] =
     useState<Date | null>(null);
   const [queueRefreshToken, setQueueRefreshToken] = useState(0);
+  const [activeWorkspace, setActiveWorkspace] =
+    useState<DoctorWorkspaceKey>('overview');
 
   const getApiErrorDetail = (err: unknown): unknown => {
     if (!err || typeof err !== 'object' || !('response' in err)) {
@@ -402,36 +469,6 @@ export default function DoctorPage() {
     }
   };
 
-  const loadLabResultsForRequest = async (request: LabRequest) => {
-    setLabResultsLoading(true);
-    setLabResultsLoadingRequestId(request.id);
-    setLabResultsError(null);
-    setLabResultsNotice(null);
-    setLabResults([]);
-
-    try {
-      const results = await doctorLabService.getLabResultsForRequest(request.id);
-      setLabResults(results);
-      setLabRequestInfo(request);
-      setSelectedLabRequestId(request.id);
-
-      if (results.length === 0) {
-        const timeAgo = getTimeAgo(request.created_at);
-        setLabResultsNotice(`Results pending (sent to lab ${timeAgo}).`);
-      }
-    } catch (error: unknown) {
-      const detail =
-        typeof error === 'object' && error && 'response' in error
-          ? (error as { response?: { data?: { detail?: string } } }).response?.data
-              ?.detail
-          : undefined;
-      setLabResultsError(detail || 'Unable to load lab results.');
-    } finally {
-      setLabResultsLoading(false);
-      setLabResultsLoadingRequestId(null);
-    }
-  };
-
   const handleCheckLabResults = async () => {
     if (!activeConsultation) return;
     setLabResultsOpen(true);
@@ -573,603 +610,1215 @@ export default function DoctorPage() {
     }
   };
 
-  const getQuickActions = () => {
-    if (!consultationVisit) {
-      return (
-        <Card title="Consultation Actions" titleClassName="!text-[#0B4DA2]">
-          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-            Select a patient from the queue to view consultation actions and
-            start documentation.
-          </div>
-        </Card>
-      );
-    }
+  const doctorDisplayName = getDashboardUserDisplayName(dashboardUser);
+  const encounterVisit =
+    consultationVisit || selectedVisit || activeConsultations[0]?.visit || null;
+  const encounterEntry = encounterVisit
+    ? activeConsultations.find((entry) => entry.visit.id === encounterVisit.id)
+    : null;
+  const activeQueueCount = allVisits.filter((visit) =>
+    [VisitStatus.REGISTERED, VisitStatus.TRIAGED].includes(visit.status)
+  ).length;
+  const activeWorkspaceLabel =
+    WORKSPACE_NAV.flatMap((group) => group.items).find(
+      (item) => item.key === activeWorkspace
+    )?.label || 'Consultation Overview';
 
-    const hasActiveConsultation =
-      activeConsultation && activeConsultation.visitId === consultationVisit.id;
+  const isEncounterConsultationActive = Boolean(
+    activeConsultation &&
+      encounterVisit &&
+      activeConsultation.visitId === encounterVisit.id
+  );
+  const isEncounterCompleted = Boolean(encounterEntry?.consultation.completed_at);
+  const encounterLabStatus =
+    encounterEntry?.labStatus ||
+    (encounterVisit?.status === VisitStatus.LAB_COMPLETED
+      ? 'ready'
+      : encounterVisit?.status === VisitStatus.LAB_REQUESTED
+        ? 'pending'
+        : 'none');
 
-    const activeEntry = hasActiveConsultation
-      ? activeConsultations.find(
-          (entry) => entry.visit.id === activeConsultation.visitId
-        )
-      : null;
-    const isConsultationCompleted = Boolean(
-      activeEntry?.consultation.completed_at
-    );
-    const labStatus = activeEntry?.labStatus ?? 'none';
-    const canStartConsultation = [
-      'REGISTERED',
-      'TRIAGED',
-      'IN_CONSULTATION',
-      'LAB_REQUESTED',
-      'LAB_COMPLETED',
-      'PHARMACY_PENDING',
-    ].includes(consultationVisit.status);
+  const panelClass =
+    'rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-sky-50/35 to-slate-50/90 shadow-[0_20px_55px_-38px_rgba(15,23,42,0.7)] ring-1 ring-white/70';
+  const secondaryPanelClass =
+    'rounded-2xl border border-slate-200/80 bg-slate-50/85 shadow-sm';
 
-    return (
-      <Card title="Consultation Actions" titleClassName="!text-[#0B4DA2]">
-        <div className="space-y-4">
-          <div className="text-sm text-gray-700">
-            Patient:{' '}
-            <span className="font-medium text-gray-900">
-              {consultationVisit.patient_name || 'Unknown patient'}
-            </span>
-            <span className="text-gray-500">
-              {' '}
-              • Visit {maskId(consultationVisit.id)}
-            </span>
-          </div>
-          <div className="text-xs text-gray-500">
-            {consultationVisit.patient_mrn
-              ? `MRN ${consultationVisit.patient_mrn}`
-              : `ID ${maskId(consultationVisit.patient_id)}`}
-          </div>
-          {hasActiveConsultation ? (
-            isConsultationCompleted ? (
-              <div className="flex items-center gap-2 text-sm text-gray-700">
-                <Tooltip
-                  content="Record is locked and read-only."
-                  widthClassName="w-64"
-                >
-                  <span className="inline-flex items-center rounded-full bg-[#E6F4FB] px-2 py-0.5 text-xs font-medium text-[#0B4DA2]">
-                    Consultation completed
-                  </span>
-                </Tooltip>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-600">
-                Continue documentation or proceed to labs and prescriptions.
-              </p>
-            )
-          ) : (
-            <p className="text-sm text-gray-600">
-              Start a consultation to unlock notes, labs, and prescriptions.
-            </p>
-          )}
+  const openEncounterVisitDetails = () => {
+    if (!encounterVisit) return;
+    setSelectedVisit(encounterVisit);
+    setIsVisitDetailsModalOpen(true);
+  };
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {!hasActiveConsultation && !canStartConsultation ? (
-              <Tooltip content="This visit is not eligible for consultation yet.">
-                <div>
-                  <Button
-                    variant="secondary"
-                    onClick={() => setIsConsultationModalOpen(true)}
-                    className="w-full justify-center"
-                    disabled
-                  >
-                    Start Consultation
-                  </Button>
-                </div>
-              </Tooltip>
-            ) : (
-              <Button
-                variant={
-                  hasActiveConsultation && isConsultationCompleted
-                    ? 'secondary'
-                    : 'primary'
-                }
-                onClick={() =>
-                  void handleOpenConsultationWorkspace(
-                    consultationVisit,
-                    Boolean(hasActiveConsultation)
-                  )
-                }
-                className="w-full justify-center"
-                disabled={startingConsultation || isTransitioning}
-                isLoading={startingConsultation}
-              >
-                {hasActiveConsultation
-                  ? isConsultationCompleted
-                    ? 'View Completed Consultation'
-                    : 'Continue Consultation'
-                  : 'Start Consultation'}
-              </Button>
-            )}
-
-            {hasActiveConsultation ? (
-              isConsultationCompleted ? (
-                <Tooltip content="Consultation is completed and locked.">
-                  <div>
-                    <Button
-                      variant="secondary"
-                      onClick={handleRequestLab}
-                      className="w-full justify-center"
-                      disabled
-                    >
-                      Request Lab Test
-                    </Button>
-                  </div>
-                </Tooltip>
-              ) : (
-                <Button
-                  variant="secondary"
-                  onClick={handleRequestLab}
-                  className="w-full justify-center"
-                >
-                  Request Lab Test
-                </Button>
-              )
-            ) : (
-              <Tooltip content="Start a consultation before ordering labs.">
-                <div>
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleRestrictedAction('lab')}
-                    className="w-full justify-center"
-                    disabled
-                  >
-                    Request Lab Test
-                  </Button>
-                </div>
-              </Tooltip>
-            )}
-
-            {hasActiveConsultation ? (
-              isConsultationCompleted ? (
-                <Tooltip content="Consultation is completed and locked.">
-                  <div>
-                    <Button
-                      variant="secondary"
-                      onClick={handleIssuePrescription}
-                      className="w-full justify-center"
-                      disabled
-                    >
-                      Issue Prescription
-                    </Button>
-                  </div>
-                </Tooltip>
-              ) : (
-                <Button
-                  variant="secondary"
-                  onClick={handleIssuePrescription}
-                  className="w-full justify-center"
-                >
-                  Issue Prescription
-                </Button>
-              )
-            ) : (
-              <Tooltip content="Start a consultation before issuing prescriptions.">
-                <div>
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleRestrictedAction('prescription')}
-                    className="w-full justify-center"
-                    disabled
-                  >
-                    Issue Prescription
-                  </Button>
-                </div>
-              </Tooltip>
-            )}
-
-            {allowedTransitions.includes('PHARMACY_PENDING') ? (
-              <Button
-                variant="primary"
-                onClick={handleSendToPharmacy}
-                className="w-full justify-center"
-                disabled={isTransitioning || startingConsultation}
-              >
-                {isTransitioning ? 'Sending...' : 'Send to Pharmacy'}
-              </Button>
-            ) : (
-              <Tooltip content="Issue a prescription to send this visit to pharmacy.">
-                <div>
-                  <Button
-                    variant="secondary"
-                    className="w-full justify-center"
-                    onClick={handleSendToPharmacy}
-                    disabled
-                  >
-                    Send to Pharmacy
-                  </Button>
-                </div>
-              </Tooltip>
-            )}
-
-            <Button
-              variant="secondary"
-              onClick={() => setIsVisitDetailsModalOpen(true)}
-              className="w-full justify-center"
-            >
-              View Visit Details
-            </Button>
-
-            <Button
-              variant="secondary"
-              onClick={handleCheckLabResults}
-              className="w-full justify-center"
-            >
-              <span className="flex w-full items-center justify-between gap-3">
-                <span className="inline-flex items-center gap-2 text-left">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="h-4 w-4 text-slate-600"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M10 2h4" />
-                    <path d="M12 2v6l4.5 7.8a3 3 0 0 1-2.6 4.5H10.1a3 3 0 0 1-2.6-4.5L12 8" />
-                    <path d="M8.5 14h7" />
-                  </svg>
-                  <span className="whitespace-nowrap">Lab Results</span>
-                </span>
-                {labStatus !== 'none' ? (
-                  <span
-                    className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
-                      labStatus === 'ready'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}
-                  >
-                    {labStatus === 'ready' ? 'Results ready' : 'Pending'}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-                    No lab order
-                  </span>
-                )}
-              </span>
-            </Button>
-          </div>
-
-          {actionWarning && (
-            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-              {actionWarning}
-              <button
-                type="button"
-                onClick={() => setActionWarning(null)}
-                className="ml-3 text-yellow-900 underline underline-offset-2"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-        </div>
-      </Card>
+  const openEncounterConsultation = () => {
+    if (!encounterVisit) return;
+    setConsultationVisit(encounterVisit);
+    void handleOpenConsultationWorkspace(
+      encounterVisit,
+      Boolean(encounterEntry || isEncounterConsultationActive)
     );
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <DashboardHero
-        title="Doctor Dashboard"
-        subtitle={HOSPITAL_NAME}
-        workspaceLabel="Clinical workspace for consultations, prescriptions, and lab requests"
-        monogram="K"
-        rightSlot={
-          <>
-            <div>
-              <span className="font-semibold">Doctor:</span>{' '}
-              {getDashboardUserDisplayName(dashboardUser)}
-            </div>
-            {activeConsultation ? (
-              <div className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white">
-                Active Consultation
-              </div>
-            ) : (
-              <div>Queue monitoring active</div>
-            )}
-          </>
-        }
-      />
+  const renderStatusPill = (
+    label: string,
+    tone: 'blue' | 'green' | 'amber' | 'rose' | 'slate' = 'slate'
+  ) => {
+    const toneClass = {
+      blue: 'border-sky-200 bg-sky-50 text-sky-800',
+      green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+      amber: 'border-amber-200 bg-amber-50 text-amber-800',
+      rose: 'border-rose-200 bg-rose-50 text-rose-800',
+      slate: 'border-slate-200 bg-slate-100 text-slate-700',
+    }[tone];
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-gray-900">Overview</h2>
-          <p className="text-sm text-gray-600">
-            At-a-glance status of today&apos;s workload and active cases.
+    return (
+      <span
+        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}
+      >
+        {label}
+      </span>
+    );
+  };
+
+  const renderActionState = (
+    state: 'available' | 'requiresConsultation' | 'pendingApi' | 'locked',
+    label?: string
+  ) => {
+    const content = {
+      available: {
+        text: label || 'Available now',
+        tone: 'green' as const,
+      },
+      requiresConsultation: {
+        text: label || 'Requires active consultation',
+        tone: 'amber' as const,
+      },
+      pendingApi: {
+        text: label || 'Frontend demonstration — clinical API pending',
+        tone: 'amber' as const,
+      },
+      locked: {
+        text: label || 'Record locked',
+        tone: 'blue' as const,
+      },
+    }[state];
+
+    return renderStatusPill(content.text, content.tone);
+  };
+
+  const renderEmptyEncounter = () => (
+    <div className="rounded-xl border border-dashed border-sky-200 bg-sky-50/55 px-4 py-6 text-sm text-slate-600">
+      Select a patient from the queue to anchor the encounter context. The
+      clinical record, orders, prescriptions, and disposition controls will
+      remain tied to that visit.
+    </div>
+  );
+
+  const renderMetricCard = (
+    label: string,
+    value: number | string,
+    caption: string,
+    tone: 'blue' | 'green' | 'amber' | 'rose' | 'slate'
+  ) => {
+    const toneClass = {
+      blue: 'from-[#0B4DA2]/12 to-sky-50 text-[#0B4DA2]',
+      green: 'from-emerald-500/12 to-emerald-50 text-emerald-700',
+      amber: 'from-amber-500/14 to-amber-50 text-amber-700',
+      rose: 'from-rose-500/12 to-rose-50 text-rose-700',
+      slate: 'from-slate-500/12 to-slate-50 text-slate-800',
+    }[tone];
+
+    return (
+      <div className={`rounded-2xl border border-slate-200 bg-gradient-to-br ${toneClass} px-4 py-3 shadow-sm`}>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          {label}
+        </p>
+        <div className="mt-2 text-2xl font-semibold">
+          {statsLoading ? '—' : value}
+        </div>
+        <p className="mt-1 text-xs text-slate-500">{caption}</p>
+      </div>
+    );
+  };
+
+  const renderClinicalActions = () => {
+    if (!encounterVisit) {
+      return renderEmptyEncounter();
+    }
+
+    const canStartConsultation = [
+      VisitStatus.REGISTERED,
+      VisitStatus.TRIAGED,
+      VisitStatus.IN_CONSULTATION,
+      VisitStatus.LAB_REQUESTED,
+      VisitStatus.LAB_COMPLETED,
+      VisitStatus.PHARMACY_PENDING,
+    ].includes(encounterVisit.status);
+
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-[#F5FAFE] to-white px-4 py-3 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Encounter Control
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                {encounterVisit.patient_name || 'Unknown patient'}
+              </h3>
+              <p className="text-sm text-slate-600">
+                {encounterVisit.patient_mrn
+                  ? `MRN ${encounterVisit.patient_mrn}`
+                  : `Patient ID ${maskId(encounterVisit.patient_id)}`}{' '}
+                • Visit {maskId(encounterVisit.id)}
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <VisitStatusBadge status={encounterVisit.status} size="sm" />
+              {encounterVisit.intake_emergency_flag &&
+                renderStatusPill('Emergency flagged', 'rose')}
+              {isEncounterCompleted && renderStatusPill('Record locked', 'blue')}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {isEncounterCompleted
+            ? renderActionState('locked', 'Completed record: read-only')
+            : isEncounterConsultationActive
+              ? renderActionState('available', 'Encounter actions available')
+              : renderActionState(
+                  'requiresConsultation',
+                  'Lab, prescription, and pharmacy require active consultation'
+                )}
+          {renderStatusPill('Service-backed clinical workflow', 'green')}
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {!canStartConsultation ? (
+            <Tooltip content="This visit is not eligible for consultation yet.">
+              <div>
+                <Button
+                  variant="secondary"
+                  onClick={openEncounterConsultation}
+                  className="w-full justify-center"
+                  disabled
+                >
+                  Start Consultation
+                </Button>
+              </div>
+            </Tooltip>
+          ) : (
+            <Button
+              variant={isEncounterCompleted ? 'secondary' : 'primary'}
+              onClick={openEncounterConsultation}
+              className="w-full justify-center"
+              disabled={startingConsultation || isTransitioning}
+              isLoading={startingConsultation}
+            >
+              {isEncounterConsultationActive || encounterEntry
+                ? isEncounterCompleted
+                  ? 'View Completed Consultation'
+                  : 'Continue Consultation'
+                : 'Start Consultation'}
+            </Button>
+          )}
+
+          {isEncounterConsultationActive && !isEncounterCompleted ? (
+            <Button
+              variant="secondary"
+              onClick={handleRequestLab}
+              className="w-full justify-center"
+            >
+              Request Lab Test
+            </Button>
+          ) : (
+            <Tooltip
+              content={
+                isEncounterCompleted
+                  ? 'Consultation is completed and locked.'
+                  : 'Start a consultation before ordering labs.'
+              }
+            >
+              <div>
+                <Button
+                  variant="secondary"
+                  onClick={() => handleRestrictedAction('lab')}
+                  className="w-full justify-center"
+                  disabled
+                >
+                  Request Lab Test
+                </Button>
+              </div>
+            </Tooltip>
+          )}
+
+          {isEncounterConsultationActive && !isEncounterCompleted ? (
+            <Button
+              variant="secondary"
+              onClick={handleIssuePrescription}
+              className="w-full justify-center"
+            >
+              Issue Prescription
+            </Button>
+          ) : (
+            <Tooltip
+              content={
+                isEncounterCompleted
+                  ? 'Consultation is completed and locked.'
+                  : 'Start a consultation before issuing prescriptions.'
+              }
+            >
+              <div>
+                <Button
+                  variant="secondary"
+                  onClick={() => handleRestrictedAction('prescription')}
+                  className="w-full justify-center"
+                  disabled
+                >
+                  Issue Prescription
+                </Button>
+              </div>
+            </Tooltip>
+          )}
+
+          {allowedTransitions.includes(VisitStatus.PHARMACY_PENDING) ? (
+            <Button
+              variant="primary"
+              onClick={handleSendToPharmacy}
+              className="w-full justify-center"
+              disabled={isTransitioning || startingConsultation}
+            >
+              {isTransitioning ? 'Sending...' : 'Send to Pharmacy'}
+            </Button>
+          ) : (
+            <Tooltip content="Issue a prescription to send this visit to pharmacy.">
+              <div>
+                <Button
+                  variant="secondary"
+                  className="w-full justify-center"
+                  onClick={handleSendToPharmacy}
+                  disabled
+                >
+                  Send to Pharmacy
+                </Button>
+              </div>
+            </Tooltip>
+          )}
+
+          <Button
+            variant="secondary"
+            onClick={openEncounterVisitDetails}
+            className="w-full justify-center"
+          >
+            View Visit Details
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={handleCheckLabResults}
+            className="w-full justify-center"
+            disabled={!isEncounterConsultationActive}
+          >
+            Lab Results
+          </Button>
+        </div>
+
+        {actionWarning && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {actionWarning}
+            <button
+              type="button"
+              onClick={() => setActionWarning(null)}
+              className="ml-3 font-medium text-amber-950 underline underline-offset-2"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderActiveConsultations = () => (
+    <div className={`${panelClass} p-4`}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+            Live Encounters
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">
+            Active Consultation Register
+          </h2>
+        </div>
+        <span className="text-xs font-medium text-slate-500">
+          Updated{' '}
+          {activeConsultationsUpdatedAt
+            ? activeConsultationsUpdatedAt.toLocaleTimeString()
+            : '—'}
+        </span>
+      </div>
+      {activeConsultations.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+          No active consultations yet. Patients started from the queue appear
+          here for fast resumption.
+        </div>
+      ) : (
+        <div className="grid gap-3 xl:grid-cols-2">
+          {activeConsultations.map((entry) => {
+            const selected = encounterVisit?.id === entry.visit.id;
+            return (
+              <button
+                key={entry.visit.id}
+                type="button"
+                onClick={() => handleSelectConsultationContext(entry.visit)}
+                className={`rounded-xl border p-3 text-left transition ${
+                  selected
+                    ? 'border-[#0B4DA2] bg-[#F5FAFE] shadow-sm'
+                    : 'border-slate-200 bg-white hover:border-sky-200 hover:bg-sky-50/40'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-950">
+                      {entry.visit.patient_name || 'Unknown patient'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {entry.visit.patient_mrn
+                        ? `MRN ${entry.visit.patient_mrn}`
+                        : `ID ${maskId(entry.visit.patient_id)}`}{' '}
+                      • {getTimeAgo(entry.consultation.started_at)} in consult
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {entry.consultation.completed_at
+                      ? renderStatusPill('Completed', 'blue')
+                      : renderStatusPill('In progress', 'green')}
+                    {entry.labStatus !== 'none' &&
+                      renderStatusPill(
+                        entry.labStatus === 'ready'
+                          ? 'Results ready'
+                          : 'Lab pending',
+                        entry.labStatus === 'ready' ? 'green' : 'amber'
+                      )}
+                  </div>
+                </div>
+                {!entry.consultation.completed_at && (
+                  <span
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleResumeConsultation(entry.visit);
+                    }}
+                    className="mt-3 inline-flex text-xs font-semibold text-[#0B4DA2] underline underline-offset-4"
+                  >
+                    Resume consultation
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderCompletedConsultations = () => (
+    <div className={`${panelClass} p-4`}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+            Completed Today
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">
+            Signed Consultation Activity
+          </h2>
+        </div>
+        {renderStatusPill(`${completedTodayVisits.length} signed`, 'green')}
+      </div>
+      {completedTodayVisits.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+          No completed consultations today yet.
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {completedTodayVisits.map((visit) => (
+            <div key={visit.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-950">
+                  {visit.patient_name || 'Unknown patient'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {visit.patient_mrn ? `MRN ${visit.patient_mrn}` : `ID ${maskId(visit.patient_id)}`}{' '}
+                  • Signed {new Date(visit.updated_at).toLocaleTimeString()}
+                </p>
+              </div>
+              <VisitStatusBadge status={visit.status} size="sm" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderQueueWorkspace = () => (
+    <div className="space-y-4">
+      <div className={`${panelClass} p-4`}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+              GOPD Queue
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-950">
+              Consultation Queue Control
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Service-backed queue with near real-time polling. Selecting a
+              patient anchors the encounter context.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {renderStatusPill(`${activeQueueCount} waiting`, 'blue')}
+            {stats.emergency > 0
+              ? renderStatusPill(`${stats.emergency} emergency`, 'rose')
+              : renderStatusPill('No emergency flag', 'green')}
+          </div>
+        </div>
+        <DoctorQueue
+          onStartConsultation={handleStartConsultation}
+          onViewVisit={handleViewVisit}
+          onSelectPatient={(visit) => {
+            handleSelectConsultationContext(visit);
+          }}
+          refreshToken={queueRefreshToken}
+        />
+      </div>
+    </div>
+  );
+
+  const renderEncounterSummary = () => (
+    <div className={`${panelClass} p-4`}>
+      <div className="mb-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+          Patient Encounter
+        </p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-950">
+          Clinical Summary
+        </h2>
+      </div>
+      {!encounterVisit ? (
+        renderEmptyEncounter()
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {[
+            ['Patient', encounterVisit.patient_name || 'Unknown patient'],
+            [
+              'Identifier',
+              encounterVisit.patient_mrn
+                ? `MRN ${encounterVisit.patient_mrn}`
+                : `ID ${maskId(encounterVisit.patient_id)}`,
+            ],
+            ['Visit State', encounterVisit.status],
+            [
+              'Clinical Record',
+              isEncounterCompleted
+                ? 'Completed and locked'
+                : isEncounterConsultationActive || encounterEntry
+                  ? 'Consultation active'
+                  : 'Not started',
+            ],
+            [
+              'Vitals',
+              encounterEntry?.consultation.vitals
+                ? 'Captured in consultation record'
+                : 'Pending clinical capture',
+            ],
+            [
+              'Allergy / Risk',
+              encounterVisit.intake_emergency_flag
+                ? 'Emergency intake flag present'
+                : 'Allergy feed pending',
+            ],
+            [
+              'Lab State',
+              encounterLabStatus === 'ready'
+                ? 'Results available'
+                : encounterLabStatus === 'pending'
+                  ? 'Lab pending'
+                  : 'No lab request',
+            ],
+            [
+              'Disposition',
+              encounterVisit.has_active_admission
+                ? 'Admission active'
+                : 'No active admission',
+            ],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                {label}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-950">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderDocumentationWorkspace = (
+    title: string,
+    description: string,
+    focus: string
+  ) => (
+    <div className={`${panelClass} p-4`}>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+            Clinical Documentation
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">{title}</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            {description}
           </p>
         </div>
+        {renderStatusPill(focus, encounterVisit ? 'blue' : 'slate')}
+      </div>
+      {renderClinicalActions()}
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        This workspace opens the service-backed consultation record. Current
+        fields are preserved in the existing consultation workflow; the visual
+        shell keeps patient context visible before the record is opened.
+      </div>
+    </div>
+  );
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-10">
-          <Card>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-500">
-                Today&apos;s Consultations
-              </p>
-              <div className="mt-2 text-3xl font-semibold text-[#0B4DA2]">
-                {statsLoading ? '—' : stats.totalToday}
-              </div>
-              {statsError && (
-                <p className="text-xs text-red-600 mt-2">{statsError}</p>
-              )}
-            </div>
-          </Card>
-          <Card>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-500">
-                In Progress
-              </p>
-              <div className="mt-2 text-3xl font-semibold text-[#1E88E5]">
-                {statsLoading ? '—' : stats.inProgress}
-              </div>
-            </div>
-          </Card>
-          <Card>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-500">
-                Completed Today
-              </p>
-              <div className="mt-2 text-3xl font-semibold text-[#18B2A7]">
-                {statsLoading ? '—' : stats.completedToday}
-              </div>
-            </div>
-          </Card>
-          <Card>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-500">
-                Pending Lab Results
-              </p>
-              <div className="mt-2 text-3xl font-semibold text-[#4A5A66]">
-                {statsLoading ? '—' : stats.pendingLab}
-              </div>
-            </div>
-          </Card>
-          <Card>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-500">
-                Emergency Flagged
-              </p>
-              <div className="mt-2 text-3xl font-semibold text-red-600">
-                {statsLoading ? '—' : stats.emergency}
-              </div>
-            </div>
-          </Card>
-        </div>
+  const renderOrdersWorkspace = (
+    title: string,
+    description: string,
+    action: 'lab' | 'results' | 'radiology' | 'prescription' | 'pharmacy'
+  ) => {
+    const isDemoOnly = action === 'radiology';
+    const canUseActiveConsultation =
+      isEncounterConsultationActive && !isEncounterCompleted;
+    const canReviewResults = isEncounterConsultationActive;
+    const canSendToPharmacy =
+      allowedTransitions.includes(VisitStatus.PHARMACY_PENDING) &&
+      !isTransitioning;
+    const state =
+      isDemoOnly
+        ? 'pendingApi'
+        : action === 'results'
+          ? canReviewResults
+            ? 'available'
+            : 'requiresConsultation'
+          : action === 'pharmacy'
+            ? canSendToPharmacy
+              ? 'available'
+              : 'requiresConsultation'
+            : canUseActiveConsultation
+              ? 'available'
+              : isEncounterCompleted
+                ? 'locked'
+                : 'requiresConsultation';
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <div className="mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Patient Queue</h2>
-              <p className="text-sm text-gray-600">
-                Assigned visits that require your attention.
-              </p>
-            </div>
-            <DoctorQueue
-              onStartConsultation={handleStartConsultation}
-              onViewVisit={handleViewVisit}
-              onSelectPatient={(visit) => {
-                handleSelectConsultationContext(visit);
-              }}
-              refreshToken={queueRefreshToken}
-            />
+    const containerClass = isDemoOnly ? secondaryPanelClass : panelClass;
+    return (
+      <div className={`${containerClass} p-4`}>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+              Orders & Treatment
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-950">{title}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600">
+              {description}
+            </p>
           </div>
+          {isDemoOnly
+            ? renderActionState('pendingApi')
+            : renderStatusPill('Service-backed workflow', 'green')}
+        </div>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white/75 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {renderActionState(state)}
+            {!isDemoOnly && renderStatusPill('Protected by active encounter context', 'blue')}
+          </div>
+          {state === 'requiresConsultation' && (
+            <p className="mt-2 text-sm text-slate-600">
+              Select a patient and start or resume consultation before using this action.
+            </p>
+          )}
+          {state === 'locked' && (
+            <p className="mt-2 text-sm text-slate-600">
+              Completed consultation records are read-only. New orders require a new clinical encounter.
+            </p>
+          )}
+        </div>
+        {action === 'lab' && (
+          <Button
+            variant="primary"
+            onClick={handleRequestLab}
+            disabled={!canUseActiveConsultation}
+          >
+            Request Lab Test
+          </Button>
+        )}
+        {action === 'results' && (
+          <Button
+            variant="primary"
+            onClick={handleCheckLabResults}
+            disabled={!canReviewResults}
+          >
+            Review Lab Results
+          </Button>
+        )}
+        {action === 'prescription' && (
+          <Button
+            variant="primary"
+            onClick={handleIssuePrescription}
+            disabled={!canUseActiveConsultation}
+          >
+            Issue Prescription
+          </Button>
+        )}
+        {action === 'pharmacy' && (
+          <Button
+            variant="primary"
+            onClick={handleSendToPharmacy}
+            disabled={
+              !canSendToPharmacy
+            }
+          >
+            {isTransitioning ? 'Sending...' : 'Send to Pharmacy'}
+          </Button>
+        )}
+        {action === 'radiology' && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Frontend demonstration — clinical API pending. Radiology request
+            routing will require a dedicated diagnostic imaging order workflow.
+          </div>
+        )}
+        <div className="mt-4">{renderEncounterSummary()}</div>
+      </div>
+    );
+  };
 
-          <div className="space-y-6">
-            <Card title="Active Consultations" titleClassName="!text-[#0B4DA2]">
-              <div className="mb-3 text-xs text-gray-500">
-                Last updated:{' '}
-                {activeConsultationsUpdatedAt
-                  ? activeConsultationsUpdatedAt.toLocaleTimeString()
-                  : '—'}
-              </div>
-              {activeConsultations.length === 0 && (
-                <p className="text-sm text-gray-500">
-                  No active consultations yet.
-                </p>
-              )}
-              {activeConsultations.length > 0 && (
-                <div className="space-y-3">
-                  {activeConsultations.map((entry) => (
-                    <div
-                      key={entry.visit.id}
-                      className={`rounded-md border p-3 ${
-                        consultationVisit?.id === entry.visit.id
-                          ? 'border-blue-200 bg-blue-50'
-                          : 'border-gray-200 bg-white'
-                      }`}
-                      onClick={() => handleSelectConsultationContext(entry.visit)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">
-                            {entry.visit.patient_name || 'Unknown patient'}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {entry.visit.patient_mrn
-                              ? `MRN ${entry.visit.patient_mrn}`
-                              : `ID ${maskId(entry.visit.patient_id)}`}
-                            {' '}• Visit {maskId(entry.visit.id)} •{' '}
-                            {getTimeAgo(entry.consultation.started_at)} in consult
-                          </p>
-                          {entry.consultation.completed_at && (
-                            <span className="mt-2 inline-flex items-center rounded-full bg-[#E6F4FB] px-2 py-0.5 text-xs font-medium text-[#0B4DA2]">
-                              Consultation completed
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          {entry.labStatus !== 'none' && (
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                entry.labStatus === 'ready'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-yellow-100 text-yellow-800'
-                              }`}
-                            >
-                              {entry.labStatus === 'ready'
-                                ? 'Results ready'
-                                : 'Lab pending'}
-                            </span>
-                          )}
-                          {entry.labStatus === 'pending' &&
-                            entry.labRequestedAt && (
-                              <span className="text-xs text-gray-500">
-                                Sent {getTimeAgo(entry.labRequestedAt)}
-                              </span>
-                            )}
-                          {!entry.consultation.completed_at && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleResumeConsultation(entry.visit);
-                              }}
-                              className="text-xs font-medium text-blue-700 hover:text-blue-800 underline underline-offset-2"
-                            >
-                              Resume
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+  const renderDispositionWorkspace = (
+    title: string,
+    description: string,
+    action: 'followUp' | 'admission' | 'referral' | 'audit'
+  ) => {
+    const isPendingApi = action === 'referral' || action === 'audit';
+    const containerClass = isPendingApi ? secondaryPanelClass : panelClass;
+    return (
+      <div className={`${containerClass} p-4`}>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+              Disposition
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-950">{title}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600">
+              {description}
+            </p>
+          </div>
+          {action === 'admission'
+            ? renderStatusPill('Service-backed via visit details', 'green')
+            : action === 'followUp'
+              ? renderStatusPill('Recall support after completion', 'green')
+              : renderActionState('pendingApi')}
+        </div>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white/75 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {isPendingApi
+              ? renderActionState('pendingApi')
+              : encounterVisit
+                ? renderActionState('available')
+                : renderActionState('requiresConsultation', 'Requires selected patient')}
+            {!isPendingApi && renderStatusPill('Encounter-linked disposition', 'blue')}
+          </div>
+        </div>
+        {action === 'admission' && (
+          <Button
+            variant="primary"
+            onClick={openEncounterVisitDetails}
+            disabled={!encounterVisit}
+          >
+            Open Admission Request
+          </Button>
+        )}
+        {action === 'followUp' && (
+          <Button
+            variant="primary"
+            onClick={openEncounterConsultation}
+            disabled={!encounterVisit}
+          >
+            Open Consultation Recall Controls
+          </Button>
+        )}
+        {isPendingApi && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+            Frontend demonstration — clinical API pending. This surface preserves
+            the governance slot without creating unsupported clinical actions.
+          </div>
+        )}
+        <div className="mt-4">{renderEncounterSummary()}</div>
+      </div>
+    );
+  };
 
-            {getQuickActions() || (
-              <Card title="Quick Actions">
-                <div className="space-y-3">
-                  <p className="text-sm text-gray-600 mb-4">
-                    Select a patient from the queue to begin consultation.
-                  </p>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center text-sm text-gray-600">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                      <span>Click &quot;Start Consultation&quot; on a patient</span>
-                    </div>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                      <span>Record vitals and medical notes</span>
-                    </div>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
-                      <span>Request labs or prescribe medication</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() => handleRestrictedAction('lab')}
-                      className="w-full justify-center"
-                    >
-                      Request Lab Test
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => handleRestrictedAction('prescription')}
-                      className="w-full justify-center"
-                    >
-                      Issue Prescription
-                    </Button>
-                  </div>
-
-                  {actionWarning && (
-                    <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-                      {actionWarning}
-                      <button
-                        type="button"
-                        onClick={() => setActionWarning(null)}
-                        className="ml-3 text-yellow-900 underline underline-offset-2"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            )}
-
-            {activeConsultation && (
-              <Card>
-                <div className="text-sm text-gray-700">
-                  Resume consultation to finalize notes or place orders.
-                </div>
-              </Card>
-            )}
-
-            <Card
-              title="Completed Visits Today"
-              titleClassName="!text-[#0B4DA2]"
+  const renderRecentActivity = () => (
+    <div className={`${panelClass} p-4`}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Movement Trace
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-950">
+            Recent Clinical Activity
+          </h2>
+        </div>
+      </div>
+      {recentActivity.length === 0 ? (
+        <p className="text-sm text-slate-500">No recent updates yet.</p>
+      ) : (
+        <div className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {recentActivity.map((visit) => (
+            <button
+              key={visit.id}
+              type="button"
+              onClick={() => handleSelectConsultationContext(visit)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-sky-50/50"
             >
-              {completedTodayVisits.length === 0 && (
-                <p className="text-sm text-gray-500">
-                  No completed visits today yet.
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-950">
+                  {visit.patient_name || 'Unknown patient'}
                 </p>
-              )}
-              {completedTodayVisits.length > 0 && (
-                <div className="space-y-3">
-                  {completedTodayVisits.map((visit) => (
-                    <div
-                      key={visit.id}
-                      className="rounded-md border border-gray-100 bg-gray-50 p-3 text-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-gray-900">
-                          {visit.patient_name || 'Unknown patient'}
-                        </p>
-                        <span className="text-xs text-gray-500">
-                          {new Date(visit.updated_at).toLocaleTimeString()}
-                        </span>
-                      </div>
-                      <div className="mt-2">
-                        <VisitStatusBadge status={visit.status} size="sm" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+                <p className="text-xs text-slate-500">
+                  Updated {new Date(visit.updated_at).toLocaleTimeString()}
+                </p>
+              </div>
+              <VisitStatusBadge status={visit.status} size="sm" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
-            <Card title="Recent Activity" titleClassName="!text-[#0B4DA2]">
-              {recentActivity.length === 0 && (
-                <p className="text-sm text-gray-500">
-                  No recent updates yet.
-                </p>
-              )}
-              {recentActivity.length > 0 && (
-                <div className="space-y-3">
-                  {recentActivity.map((visit) => (
-                    <div
-                      key={visit.id}
-                      className="rounded-md border border-gray-100 bg-gray-50 p-3 text-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-gray-900">
-                          {visit.patient_name || 'Unknown patient'}
-                        </p>
-                        <span className="text-xs text-gray-500">
-                          {new Date(visit.updated_at).toLocaleTimeString()}
-                        </span>
-                      </div>
-                      <div className="mt-2">
-                        <VisitStatusBadge status={visit.status} size="sm" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+  const renderOverview = () => (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {renderMetricCard(
+          'Active Queue',
+          activeQueueCount,
+          'Waiting for doctor action',
+          'blue'
+        )}
+        {renderMetricCard(
+          'In Consultation',
+          stats.inProgress,
+          'Currently under doctor care',
+          'slate'
+        )}
+        {renderMetricCard(
+          'Pending Labs',
+          stats.pendingLab,
+          'Awaiting diagnostic results',
+          'amber'
+        )}
+        {renderMetricCard(
+          'Emergency Flagged',
+          stats.emergency,
+          'Requires clinical attention',
+          stats.emergency > 0 ? 'rose' : 'green'
+        )}
+        {renderMetricCard(
+          'Completed Today',
+          stats.completedToday,
+          'Signed clinical encounters',
+          'green'
+        )}
+      </div>
+      {statsError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {statsError}
+        </div>
+      )}
+      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
+        {renderQueueWorkspace()}
+        <div className="space-y-4">
+          {renderActiveConsultations()}
+          {renderRecentActivity()}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderWorkspace = () => {
+    switch (activeWorkspace) {
+      case 'overview':
+        return renderOverview();
+      case 'queue':
+        return renderQueueWorkspace();
+      case 'active':
+        return (
+          <div className="space-y-4">
+            <div className={`${panelClass} p-4`}>{renderClinicalActions()}</div>
+            {renderActiveConsultations()}
+          </div>
+        );
+      case 'completed':
+        return renderCompletedConsultations();
+      case 'summary':
+        return renderEncounterSummary();
+      case 'complaints':
+        return renderDocumentationWorkspace(
+          'Complaints & History',
+          'Document presenting complaints, relevant history, and clinical context inside the protected consultation record.',
+          'History capture'
+        );
+      case 'examination':
+        return renderDocumentationWorkspace(
+          'Examination Findings',
+          'Record vitals and examination findings while preserving the active visit and doctor context.',
+          'Vitals and findings'
+        );
+      case 'diagnosis':
+        return renderDocumentationWorkspace(
+          'Diagnosis / Assessment',
+          'Capture diagnosis, differential assessment, and clinical impression in the encounter record.',
+          'Assessment'
+        );
+      case 'notes':
+        return renderDocumentationWorkspace(
+          'Clinical Notes',
+          'Maintain signed clinical notes with draft and completion controls preserved.',
+          'Clinical notes'
+        );
+      case 'labRequests':
+        return renderOrdersWorkspace(
+          'Lab Requests',
+          'Create service-backed laboratory requests from the active consultation. Billing item creation remains preserved.',
+          'lab'
+        );
+      case 'labResults':
+        return renderOrdersWorkspace(
+          'Lab Results',
+          'Review released diagnostic results with abnormal, critical, amended, and specimen trace visibility.',
+          'results'
+        );
+      case 'radiology':
+        return renderOrdersWorkspace(
+          'Radiology Requests',
+          'Governed placeholder for future imaging order workflow.',
+          'radiology'
+        );
+      case 'prescription':
+        return renderOrdersWorkspace(
+          'Prescription Plan',
+          'Issue prescriptions from governed pharmacy catalog items tied to the active consultation.',
+          'prescription'
+        );
+      case 'pharmacy':
+        return renderOrdersWorkspace(
+          'Send to Pharmacy',
+          'Move eligible prescription visits into pharmacy workflow using preserved visit transition controls.',
+          'pharmacy'
+        );
+      case 'followUp':
+        return renderDispositionWorkspace(
+          'Follow-Up / Recall',
+          'Manage clinical continuity after consultation completion. Recall suggestions remain preserved in the consultation record.',
+          'followUp'
+        );
+      case 'admission':
+        return renderDispositionWorkspace(
+          'Admission Request',
+          'Open the existing visit details workflow to submit admission requests where clinically required.',
+          'admission'
+        );
+      case 'referral':
+        return renderDispositionWorkspace(
+          'Internal Referral',
+          'Governed placeholder for clinical referral routing to Specialist Clinics, A&E, Gynecology, Pediatrics, Maternity, or other departments.',
+          'referral'
+        );
+      case 'audit':
+        return renderDispositionWorkspace(
+          'Consultation Audit Trail',
+          'Governed placeholder for encounter audit trace, actor history, and clinical record movement events.',
+          'audit'
+        );
+      default:
+        return renderOverview();
+    }
+  };
+
+  const renderEncounterRail = () => (
+    <aside className={`${panelClass} h-fit p-4 xl:sticky xl:top-4`}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+            Encounter Context
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-slate-950">
+            Clinical Record Anchor
+          </h2>
+        </div>
+        <span className="h-2.5 w-2.5 rounded-full bg-cyan-500 shadow-[0_0_0_4px_rgba(34,211,238,0.16)]" />
+      </div>
+
+      {!encounterVisit ? (
+        renderEmptyEncounter()
+      ) : (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-[#0B4DA2]/15 bg-gradient-to-br from-[#F5FAFE] to-white p-4 shadow-sm">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+              Selected patient
+            </p>
+            <p className="text-lg font-semibold leading-tight text-slate-950">
+              {encounterVisit.patient_name || 'Unknown patient'}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              {encounterVisit.patient_mrn
+                ? `MRN ${encounterVisit.patient_mrn}`
+                : `Patient ID ${maskId(encounterVisit.patient_id)}`}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <VisitStatusBadge status={encounterVisit.status} size="sm" />
+              {encounterVisit.intake_emergency_flag &&
+                renderStatusPill('Emergency', 'rose')}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Context state
+              </span>
+              {isEncounterCompleted
+                ? renderActionState('locked', 'Locked')
+                : isEncounterConsultationActive || encounterEntry
+                  ? renderActionState('available', 'Active')
+                  : renderActionState('requiresConsultation', 'Pending')}
+            </div>
+          </div>
+
+          {[
+            ['Visit', maskId(encounterVisit.id)],
+            [
+              'Queue State',
+              isEncounterConsultationActive || encounterEntry
+                ? 'Clinical encounter active'
+                : 'Awaiting consultation start',
+            ],
+            [
+              'Vitals',
+              encounterEntry?.consultation.vitals ? 'Captured' : 'Pending',
+            ],
+            ['Allergy / Risk', 'Clinical allergy API pending'],
+            [
+              'Lab',
+              encounterLabStatus === 'ready'
+                ? 'Results available'
+                : encounterLabStatus === 'pending'
+                  ? 'Pending result'
+                  : 'No request',
+            ],
+            [
+              'Pharmacy',
+              encounterVisit.status === VisitStatus.PHARMACY_PENDING
+                ? 'Sent to pharmacy'
+                : allowedTransitions.includes(VisitStatus.PHARMACY_PENDING)
+                  ? 'Ready after prescription'
+                  : 'Not ready',
+            ],
+            [
+              'Admission',
+              encounterVisit.has_active_admission ? 'Active admission' : 'No active admission',
+            ],
+            [
+              'Audit Lock',
+              isEncounterCompleted
+                ? 'Completed record locked'
+                : isEncounterConsultationActive || encounterEntry
+                  ? 'Draft editable'
+                  : 'No consultation record',
+            ],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-xl border border-slate-200 bg-white/85 px-3 py-2.5 shadow-sm"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                {label}
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{value}</p>
+            </div>
+          ))}
+
+          <div className="grid gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={openEncounterConsultation}
+              disabled={!encounterVisit}
+              className="justify-center"
+            >
+              Open Encounter
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={openEncounterVisitDetails}
+              disabled={!encounterVisit}
+              className="justify-center"
+            >
+              Visit Details
+            </Button>
           </div>
         </div>
-      </main>
+      )}
+    </aside>
+  );
+
+  return (
+    <main className="min-h-screen bg-[linear-gradient(135deg,#eef6fb_0%,#f8fafc_42%,#e8f1f8_100%)] text-slate-950">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] gap-4 px-4 py-4 lg:px-5">
+        <aside className="hidden w-[270px] shrink-0 lg:block">
+          <div className="sticky top-4 rounded-3xl border border-slate-200/80 bg-[#071B35] p-2.5 text-white shadow-[0_24px_80px_-45px_rgba(7,27,53,0.9)]">
+            <div className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200">
+                    GOPD Clinical
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-white">
+                    {doctorDisplayName}
+                  </p>
+                </div>
+                <span className="rounded-full border border-emerald-300/30 bg-emerald-400/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-100">
+                  Active
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between rounded-xl bg-white/10 px-3 py-1.5 text-xs text-slate-200">
+                <span>Department</span>
+                <span className="font-semibold text-white">GOPD</span>
+              </div>
+            </div>
+
+            <nav className="mt-3 max-h-[calc(100vh-156px)] space-y-3 overflow-y-auto pr-1">
+              {WORKSPACE_NAV.map((group) => (
+                <div key={group.group}>
+                  <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    {group.group}
+                  </p>
+                  <div className="space-y-1">
+                    {group.items.map((item) => {
+                      const active = activeWorkspace === item.key;
+                      const apiPending = API_PENDING_WORKSPACES.has(item.key);
+                      const primary = PRIMARY_WORKFLOW_WORKSPACES.has(item.key);
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setActiveWorkspace(item.key)}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-[13px] transition ${
+                            active
+                              ? 'bg-cyan-400/16 text-white ring-1 ring-cyan-300/30'
+                              : apiPending
+                                ? 'text-slate-500 hover:bg-white/8 hover:text-slate-200'
+                                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          <span
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[9px] font-bold ${
+                              active
+                                ? 'bg-cyan-300 text-[#071B35]'
+                                : apiPending
+                                  ? 'bg-white/5 text-slate-500'
+                                  : 'bg-white/10 text-cyan-100'
+                            }`}
+                          >
+                            {item.short}
+                          </span>
+                          <span className="min-w-0 truncate">{item.label}</span>
+                          {primary && !active && (
+                            <span className="ml-auto h-1.5 w-1.5 rounded-full bg-cyan-300/80" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+        </aside>
+
+        <section className="min-w-0 flex-1 space-y-4">
+          <header className={`${panelClass} overflow-hidden`}>
+            <div className="border-b border-slate-200 bg-gradient-to-br from-white via-sky-50/60 to-slate-50 px-5 py-4">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0B4DA2]">
+                    {HOSPITAL_NAME} • KSH Enterprise HIS
+                  </p>
+                  <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+                    GOPD Clinical Consultation Workspace
+                  </h1>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-600">
+                    Reception moves the patient. Doctor owns the encounter. HIS
+                    preserves the clinical record.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 xl:w-[520px]">
+                  {[
+                    ['Queue', activeQueueCount],
+                    ['In consult', stats.inProgress],
+                    ['Pending labs', stats.pendingLab],
+                    ['Completed', stats.completedToday],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-xl border border-slate-200 bg-white/85 px-3 py-2 shadow-sm"
+                    >
+                      <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        {label}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-slate-950">
+                        {statsLoading ? '—' : value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100/70 px-5 py-3 text-sm">
+              <div className="min-w-0">
+                <span className="font-semibold text-slate-900">
+                  {activeWorkspaceLabel}
+                </span>
+                <span className="mx-2 text-slate-300">/</span>
+                <span className="text-slate-600">Department: GOPD</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {activeConsultation
+                  ? renderStatusPill('Active consultation', 'green')
+                  : renderStatusPill('Queue monitoring', 'blue')}
+                {stats.emergency > 0
+                  ? renderStatusPill(`${stats.emergency} emergency flagged`, 'rose')
+                  : renderStatusPill('No emergency flag', 'green')}
+              </div>
+            </div>
+          </header>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0">{renderWorkspace()}</div>
+            {renderEncounterRail()}
+          </div>
+        </section>
+      </div>
 
       {consultationVisit && (
         <ConsultationModal
@@ -1204,16 +1853,21 @@ export default function DoctorPage() {
       />
 
       {activeConsultation && isLabRequestModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Request Lab Test
-                </h2>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#0B4DA2]">
+                    Investigation Order
+                  </p>
+                  <h2 className="mt-1 text-2xl font-semibold text-slate-950">
+                    Request Lab Test
+                  </h2>
+                </div>
                 <button
                   onClick={() => setIsLabRequestModalOpen(false)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="text-2xl text-slate-400 hover:text-slate-600"
                 >
                   ✕
                 </button>
@@ -1232,16 +1886,21 @@ export default function DoctorPage() {
       )}
 
       {activeConsultation && isPrescriptionModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Issue Prescription
-                </h2>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#0B4DA2]">
+                    Treatment Plan
+                  </p>
+                  <h2 className="mt-1 text-2xl font-semibold text-slate-950">
+                    Issue Prescription
+                  </h2>
+                </div>
                 <button
                   onClick={() => setIsPrescriptionModalOpen(false)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="text-2xl text-slate-400 hover:text-slate-600"
                 >
                   ✕
                 </button>
@@ -1273,14 +1932,14 @@ export default function DoctorPage() {
         />
       )}
 
-      <footer className="bg-white border-t mt-8 py-4">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <footer className="border-t border-slate-200 bg-white/80 py-4">
+        <div className="mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-gray-500">
-            Doctor Portal • {HOSPITAL_NAME} •{' '}
+            GOPD Clinical Consultation Workspace • {HOSPITAL_NAME} •{' '}
             {new Date().toLocaleDateString()}
           </p>
         </div>
       </footer>
-    </div>
+    </main>
   );
 }

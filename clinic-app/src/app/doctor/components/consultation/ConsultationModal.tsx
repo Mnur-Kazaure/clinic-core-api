@@ -415,71 +415,77 @@ export function ConsultationModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-start mb-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl">
+        <div className="border-b border-slate-200 bg-white px-6 py-5">
+          <div className="flex justify-between items-start">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#0B4DA2]">
+                Clinical Encounter Record
+              </p>
+              <h2 className="mt-1 text-2xl font-semibold text-slate-950">
                 {consultation ? 'Consultation' : 'Start Consultation'}
               </h2>
-              <div className="mt-2 rounded-md border border-blue-100 bg-[#F5FAFE] px-3 py-2 text-sm text-gray-700">
-                <span className="font-medium text-gray-900">
+              <div className="mt-3 rounded-xl border border-blue-100 bg-[#F5FAFE] px-3 py-2 text-sm text-slate-700">
+                <span className="font-semibold text-slate-950">
                   {visitSummary?.patientName || 'Unknown patient'}
                 </span>
-                <span className="text-gray-500">
+                <span className="text-slate-500">
                   {' '}
                   • Visit {visitId.substring(0, 12)}...
                 </span>
                 {visitSummary?.status && (
-                  <span className="text-gray-500">
+                  <span className="text-slate-500">
                     {' '}
                     • Status {visitSummary.status}
                   </span>
                 )}
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                 {visitSummary?.mrn ? (
-                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
                     MRN {visitSummary.mrn}
                   </span>
                 ) : (
-                  <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 font-medium text-slate-500">
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-500">
                     ID {visitId.substring(0, 6)}…{visitId.substring(visitId.length - 4)}
                   </span>
                 )}
                 {visitSummary?.intakeEmergencyFlag && (
-                  <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
+                  <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 font-semibold text-rose-800">
                     Emergency flagged
                   </span>
                 )}
               </div>
               {isCompleted && (
-                <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#E6F4FB] text-[#0B4DA2] mt-1">
+                <div className="mt-2 inline-flex items-center rounded-full border border-blue-100 bg-[#E6F4FB] px-2.5 py-0.5 text-xs font-semibold text-[#0B4DA2]">
                   Consultation completed (read-only)
                 </div>
               )}
             </div>
             <button
               onClick={handleClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
+              className="text-2xl text-slate-400 hover:text-slate-600"
             >
               ✕
             </button>
           </div>
+        </div>
+
+        <div className="p-6">
 
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-red-600">{error}</p>
+            <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4">
+              <p className="text-rose-700">{error}</p>
             </div>
           )}
 
           {loading && !consultation && (
             <div className="space-y-4">
-              <div className="animate-pulse h-8 bg-gray-200 rounded w-1/3"></div>
+              <div className="h-8 w-1/3 animate-pulse rounded bg-slate-200"></div>
               <div className="grid grid-cols-2 gap-4">
                 {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="animate-pulse h-20 bg-gray-200 rounded"></div>
+                  <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-200"></div>
                 ))}
               </div>
             </div>
@@ -488,13 +494,13 @@ export function ConsultationModal({
           {!consultation && !loading && (
             <Card>
               <div className="text-center py-8">
-                <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700 mb-4">
+                <div className="mb-4 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                   Consultation
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                <h3 className="mb-2 text-lg font-semibold text-slate-950">
                   No Consultation Started
                 </h3>
-                <p className="text-gray-600 mb-6">
+                <p className="mb-6 text-slate-600">
                   Start a consultation to record medical notes and vitals for
                   this patient.
                 </p>
@@ -618,7 +624,7 @@ export function ConsultationModal({
 
                 {!isCompleted && (
                   <div className="flex flex-col items-end gap-2">
-                    <span className="text-xs text-red-600">
+                    <span className="text-xs font-medium text-rose-700">
                       Completing locks this record: no edits, lab orders, or prescriptions.
                     </span>
                     <Button
@@ -634,7 +640,7 @@ export function ConsultationModal({
               </div>
 
               {isCompleted && (
-                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                   Consultation is completed and locked for edits.
                 </div>
               )}

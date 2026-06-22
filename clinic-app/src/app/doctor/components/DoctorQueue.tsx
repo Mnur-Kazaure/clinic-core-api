@@ -5,7 +5,6 @@ import { visitService } from '@/domains/visit/services/visitService';
 import { VisitResponse } from '@/shared/types';
 import { VisitStatusBadge } from '@/ui/VisitStatusBadge';
 import { Button } from '@/shared/Button';
-import { Card } from '@/shared/Card';
 import { VisitStatus } from '@/shared/enums';
 
 interface DoctorQueueProps {
@@ -182,33 +181,47 @@ export function DoctorQueue({
 
   if (loading && visits.length === 0) {
     return (
-      <Card title="My Patient Queue">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+            My Patient Queue
+          </p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-950">
+            Loading assigned patients
+          </h3>
+        </div>
         <div className="space-y-4">
-          <div className="animate-pulse h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-8 w-1/3 animate-pulse rounded bg-slate-200"></div>
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse h-20 bg-gray-200 rounded"></div>
+              <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-200"></div>
             ))}
           </div>
         </div>
-      </Card>
+      </div>
     );
   }
 
   return (
-    <Card title="My Patient Queue">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-700">
-              Status
-            </label>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#0B4DA2]">
+              My Patient Queue
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-950">
+              Service-backed Consultation Queue
+            </h3>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-sm font-semibold text-slate-700">Status</label>
             <select
               value={statusFilter}
               onChange={(e) =>
                 setStatusFilter(e.target.value as DoctorQueueFilter)
               }
-              className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0B4DA2]"
               aria-label="Filter by visit status"
             >
               {STATUS_OPTIONS.map((option) => (
@@ -218,36 +231,36 @@ export function DoctorQueue({
               ))}
             </select>
 
-            <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+            <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
               {visits.length} patient{visits.length !== 1 ? 's' : ''}
             </div>
-          </div>
 
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={loadQueue}
-            disabled={loading}
-          >
-            {loading ? 'Refreshing...' : 'Refresh'}
-          </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={loadQueue}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
         </div>
-        <div className="text-xs text-gray-500">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
           Last refreshed:{' '}
           {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
             <div className="flex">
               <div className="flex-shrink-0">
-                <span className="text-red-400">⚠</span>
+                <span className="text-rose-500">!</span>
               </div>
               <div className="ml-3">
-                <p className="text-sm text-red-600">{error}</p>
+                <p className="text-sm text-rose-700">{error}</p>
                 <button
                   onClick={loadQueue}
-                  className="mt-2 text-sm font-medium text-red-700 hover:text-red-800"
+                  className="mt-2 text-sm font-semibold text-rose-800 hover:text-rose-900"
                 >
                   Try again
                 </button>
@@ -256,28 +269,28 @@ export function DoctorQueue({
           </div>
         )}
         {startError && (
-          <div className="p-3 rounded-md border border-amber-200 bg-amber-50 text-sm text-amber-900">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             {startError}
           </div>
         )}
 
         {!error && visits.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-600 font-medium">
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-8 text-center">
+            <p className="font-semibold text-slate-700">
               No patients in your{' '}
               {STATUS_OPTIONS
                 .find((o) => o.value === statusFilter)
                 ?.label?.toLowerCase()}{' '}
               queue
             </p>
-            <p className="text-sm text-gray-400 mt-1">
+            <p className="mt-1 text-sm text-slate-500">
               Patients will appear here when assigned to you.
             </p>
           </div>
         )}
 
         {!error && visits.length > 0 && (
-          <div className="border rounded-lg divide-y">
+          <div className="divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white">
             {visits.map((visit) => {
               const consultStatus = visit.consultation_status || 'none';
               const hasConsultation = consultStatus === 'in_progress' || consultStatus === 'completed';
@@ -285,7 +298,7 @@ export function DoctorQueue({
               return (
                 <div
                   key={visit.id}
-                  className="p-4 hover:bg-gray-50"
+                  className="cursor-pointer border-l-4 border-l-transparent p-4 transition hover:border-l-[#0B4DA2] hover:bg-sky-50/40"
                   onClick={() => {
                     if (onSelectPatient) {
                       onSelectPatient(visit, hasConsultation);
@@ -318,33 +331,33 @@ export function DoctorQueue({
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                      <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
                         <div>
-                          <span className="text-gray-600">Patient</span>
-                          <p className="font-semibold text-gray-900">
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Patient</span>
+                          <p className="mt-1 font-semibold text-slate-950">
                             {visit.patient_name || 'Unknown patient'}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-slate-500">
                             {visit.patient_mrn
                               ? `MRN: ${visit.patient_mrn}`
                               : `ID: ${maskId(visit.patient_id)}`}
                           </p>
                         </div>
                         <div>
-                          <span className="text-gray-600">Status Duration</span>
-                          <p className="font-medium text-gray-900">
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status Duration</span>
+                          <p className="mt-1 font-medium text-slate-900">
                             {getTimeAgo(visit.updated_at)}
                           </p>
                         </div>
                         <div>
-                          <span className="text-gray-600">Visit Started</span>
-                          <p className="font-medium text-gray-900">
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Visit Started</span>
+                          <p className="mt-1 font-medium text-slate-900">
                             {new Date(visit.created_at).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-3 flex items-center text-xs text-gray-500">
+                      <div className="mt-3 flex items-center text-xs text-slate-500">
                         <span>Visit ID: {maskId(visit.id)}</span>
                       </div>
                     </div>
@@ -405,7 +418,7 @@ export function DoctorQueue({
                             onViewVisit(visit);
                           }
                         }}
-                        className="text-sm font-medium text-blue-700 hover:text-blue-800 underline underline-offset-2"
+                      className="text-sm font-semibold text-[#0B4DA2] underline underline-offset-4 hover:text-[#08386f]"
                       >
                         View Details
                       </button>
@@ -418,8 +431,8 @@ export function DoctorQueue({
         )}
 
         {!error && visits.length > 0 && (
-          <div className="pt-4 border-t">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">
+          <div className="border-t border-slate-200 pt-4">
+            <h4 className="mb-2 text-sm font-semibold text-slate-950">
               Queue Summary
             </h4>
             <div className="flex flex-wrap gap-3">
@@ -438,7 +451,7 @@ export function DoctorQueue({
                       >
                         {opt.label}
                       </span>
-                      <span className="text-sm text-gray-600">{count}</span>
+                      <span className="text-sm font-medium text-slate-600">{count}</span>
                     </div>
                   );
                 })
@@ -447,6 +460,6 @@ export function DoctorQueue({
           </div>
         )}
       </div>
-    </Card>
+    </div>
   );
 }

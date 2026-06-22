@@ -157,25 +157,29 @@ export function LabRequestForm({
 
   if (compact) {
     return (
-      <Card title="Request Lab Test">
+      <Card title="Request Lab Test" titleClassName="!text-[#0B4DA2]">
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-xl border border-blue-100 bg-[#F5FAFE] px-3 py-2 text-sm text-slate-700">
+            Investigation requests are service-backed and create billing items
+            for cashier payment before laboratory execution.
+          </div>
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-600">{error}</p>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+              <p className="text-sm text-rose-700">{error}</p>
             </div>
           )}
           {testLoadError && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
               <p className="text-sm text-amber-700">{testLoadError}</p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Select Test</label>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Select Test</label>
             <select
               value={selectedCode}
               onChange={(e) => setSelectedCode(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0B4DA2]"
               disabled={isSubmitting || isLoadingTests || labTests.length === 0}
             >
               <option value="">
@@ -194,19 +198,19 @@ export function LabRequestForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
               Special Instructions (Optional)
             </label>
             <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               placeholder="Any special instructions for the lab..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
+              className="min-h-[80px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0B4DA2]"
               disabled={isSubmitting}
             />
           </div>
 
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             {selectedTest
               ? `Charge: ${formatMoney(selectedTest.default_amount_minor, selectedTest.currency)}`
               : 'Select a test to view charge.'}
@@ -234,7 +238,7 @@ export function LabRequestForm({
             )}
           </div>
 
-          <div className="text-xs text-gray-500 pt-2">
+          <div className="pt-2 text-xs font-medium text-slate-500">
             <p>Billing item is created automatically for cashier payment.</p>
             <p>Lab receives this request only after payment verification.</p>
           </div>
